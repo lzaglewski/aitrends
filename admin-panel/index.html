@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - AI Trends Monitor</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-container">
+            <a href="index.html" class="nav-brand">📊 AI Trends Monitor</a>
+            <ul class="nav-links">
+                <li><a href="index.html" class="active">Dashboard</a></li>
+                <li><a href="sources.html">Źródła</a></li>
+                <li><a href="articles.html">Artykuły</a></li>
+                <li><a href="trends.html">Trendy</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container">
+        <div class="page-header">
+            <h1>📊 Dashboard</h1>
+            <p>Przegląd systemu monitorowania trendów w reklamie</p>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Źródła RSS</div>
+                <div class="stat-value" id="stat-sources">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Artykuły</div>
+                <div class="stat-value" id="stat-articles">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Słowa kluczowe</div>
+                <div class="stat-value" id="stat-keywords">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Aktywne źródła</div>
+                <div class="stat-value" id="stat-active-sources">-</div>
+            </div>
+        </div>
+
+        <!-- Scraping Control Card -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">⚙️ Zarządzanie Scrapingiem</h2>
+            </div>
+            <div style="text-align: center; padding: 2rem 0;">
+                <p class="text-muted mb-2">Uruchom scraping ręcznie aby pobrać najnowsze artykuły</p>
+                <button id="trigger-scraping-btn" class="btn btn-primary" onclick="triggerScraping()">
+                    🚀 Uruchom Scraping
+                </button>
+                <div id="scraping-status" class="mt-2"></div>
+            </div>
+        </div>
+
+        <!-- Top Trending Keywords Card -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">📈 Najpopularniejsze Trendy (30 dni)</h2>
+                <a href="trends.html" class="btn btn-secondary btn-sm">Zobacz wszystkie</a>
+            </div>
+            <div id="loading-trends" class="spinner" style="display: none;"></div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Słowo kluczowe</th>
+                            <th>Liczba wystąpień</th>
+                            <th>Wzrost</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trends-tbody">
+                        <tr>
+                            <td colspan="4" class="text-center text-muted">Wczytywanie...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Recent Articles Card -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">📰 Ostatnie Artykuły</h2>
+                <a href="articles.html" class="btn btn-secondary btn-sm">Zobacz wszystkie</a>
+            </div>
+            <div id="loading-articles" class="spinner" style="display: none;"></div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Tytuł</th>
+                            <th>Źródło</th>
+                            <th>Data publikacji</th>
+                            <th>Słowa</th>
+                        </tr>
+                    </thead>
+                    <tbody id="articles-tbody">
+                        <tr>
+                            <td colspan="4" class="text-center text-muted">Wczytywanie...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Sources Status Card -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">📡 Status Źródeł</h2>
+                <a href="sources.html" class="btn btn-secondary btn-sm">Zarządzaj</a>
+            </div>
+            <div id="loading-sources" class="spinner" style="display: none;"></div>
+            <div id="sources-status"></div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script>
+        // Load statistics
+        async function loadStats() {
+            try {
+                const stats = await api.getStats();
+
+                document.getElementById('stat-sources').textContent = stats.total_sources || 0;
+                document.getElementById('stat-articles').textContent = stats.total_articles || 0;
+                document.getElementById('stat-keywords').textContent = stats.unique_keywords || 0;
+                document.getElementById('stat-active-sources').textContent = stats.active_sources || 0;
+
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Load top trends
+        async function loadTrends() {
+            const tbody = document.getElementById('trends-tbody');
+            const spinner = document.getElementById('loading-trends');
+
+            try {
+                spinner.style.display = 'block';
+                tbody.innerHTML = '';
+
+                const trends = await api.getTrends(30, 10);
+
+                if (trends.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="4" class="text-center text-muted">
+                                Brak trendów do wyświetlenia
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                trends.forEach(trend => {
+                    const row = document.createElement('tr');
+                    const growthPercent = (trend.growth_rate * 100).toFixed(1);
+                    const trendBadge = trend.is_trending
+                        ? '<span class="badge badge-success">📈 Rosnący</span>'
+                        : '<span class="badge badge-info">-</span>';
+
+                    row.innerHTML = `
+                        <td><strong>${trend.keyword}</strong></td>
+                        <td>${trend.count}</td>
+                        <td><span class="badge badge-success">+${growthPercent}%</span></td>
+                        <td>${trendBadge}</td>
+                    `;
+
+                    tbody.appendChild(row);
+                });
+
+            } catch (error) {
+                console.error('Error loading trends:', error);
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center text-muted">
+                            Błąd wczytywania trendów
+                        </td>
+                    </tr>
+                `;
+            } finally {
+                spinner.style.display = 'none';
+            }
+        }
+
+        // Load recent articles
+        async function loadArticles() {
+            const tbody = document.getElementById('articles-tbody');
+            const spinner = document.getElementById('loading-articles');
+
+            try {
+                spinner.style.display = 'block';
+                tbody.innerHTML = '';
+
+                const articles = await api.getArticles({ limit: 10, days: 7 });
+
+                if (articles.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="4" class="text-center text-muted">
+                                Brak artykułów do wyświetlenia
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                articles.forEach(article => {
+                    const row = document.createElement('tr');
+                    const date = article.published_date
+                        ? new Date(article.published_date).toLocaleDateString('pl-PL')
+                        : 'Brak daty';
+
+                    row.innerHTML = `
+                        <td>
+                            <a href="${article.url}" target="_blank" style="color: var(--primary-color); text-decoration: none;">
+                                ${article.title}
+                            </a>
+                        </td>
+                        <td><span class="text-sm">${article.source_name}</span></td>
+                        <td class="text-sm">${date}</td>
+                        <td>${article.word_count}</td>
+                    `;
+
+                    tbody.appendChild(row);
+                });
+
+            } catch (error) {
+                console.error('Error loading articles:', error);
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center text-muted">
+                            Błąd wczytywania artykułów
+                        </td>
+                    </tr>
+                `;
+            } finally {
+                spinner.style.display = 'none';
+            }
+        }
+
+        // Load sources status
+        async function loadSourcesStatus() {
+            const container = document.getElementById('sources-status');
+            const spinner = document.getElementById('loading-sources');
+
+            try {
+                spinner.style.display = 'block';
+                container.innerHTML = '';
+
+                const sources = await api.getSources(false);
+
+                const activeSources = sources.filter(s => s.active).length;
+                const inactiveSources = sources.filter(s => !s.active).length;
+
+                container.innerHTML = `
+                    <div class="flex flex-gap">
+                        <div style="flex: 1; text-align: center; padding: 1rem;">
+                            <div style="font-size: 2rem; color: var(--success-color);">✓</div>
+                            <div style="font-size: 1.5rem; font-weight: 600;">${activeSources}</div>
+                            <div class="text-muted text-sm">Aktywne źródła</div>
+                        </div>
+                        <div style="flex: 1; text-align: center; padding: 1rem;">
+                            <div style="font-size: 2rem; color: var(--danger-color);">✗</div>
+                            <div style="font-size: 1.5rem; font-weight: 600;">${inactiveSources}</div>
+                            <div class="text-muted text-sm">Nieaktywne źródła</div>
+                        </div>
+                        <div style="flex: 1; text-align: center; padding: 1rem;">
+                            <div style="font-size: 2rem;">📊</div>
+                            <div style="font-size: 1.5rem; font-weight: 600;">${sources.length}</div>
+                            <div class="text-muted text-sm">Wszystkie źródła</div>
+                        </div>
+                    </div>
+                `;
+
+            } catch (error) {
+                console.error('Error loading sources status:', error);
+                container.innerHTML = '<p class="text-center text-muted">Błąd wczytywania statusu źródeł</p>';
+            } finally {
+                spinner.style.display = 'none';
+            }
+        }
+
+        // Trigger scraping
+        async function triggerScraping() {
+            const btn = document.getElementById('trigger-scraping-btn');
+            const statusDiv = document.getElementById('scraping-status');
+
+            try {
+                btn.disabled = true;
+                btn.textContent = '⏳ Uruchamianie...';
+
+                const result = await api.triggerScraping();
+
+                statusDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        Scraping uruchomiony! PID: ${result.pid}<br>
+                        Status: ${result.status}<br>
+                        <small>To może potrwać kilka minut. Odśwież stronę za chwilę aby zobaczyć nowe artykuły.</small>
+                    </div>
+                `;
+
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.textContent = '🚀 Uruchom Scraping';
+                }, 10000);
+
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="alert alert-error">
+                        Błąd uruchamiania scrapingu: ${error.message}
+                    </div>
+                `;
+                btn.disabled = false;
+                btn.textContent = '🚀 Uruchom Scraping';
+            }
+        }
+
+        // Load all data on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            loadTrends();
+            loadArticles();
+            loadSourcesStatus();
+        });
+    </script>
+</body>
+</html>

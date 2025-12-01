@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Źródła RSS - AI Trends Monitor</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-container">
+            <a href="index.html" class="nav-brand">📊 AI Trends Monitor</a>
+            <ul class="nav-links">
+                <li><a href="index.html">Dashboard</a></li>
+                <li><a href="sources.html" class="active">Źródła</a></li>
+                <li><a href="articles.html">Artykuły</a></li>
+                <li><a href="trends.html">Trendy</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container">
+        <div class="page-header">
+            <h1>📡 Zarządzanie Źródłami RSS</h1>
+            <p>Dodawaj, edytuj i zarządzaj źródłami feedów RSS</p>
+        </div>
+
+        <!-- Alert Container -->
+        <div id="alert-container"></div>
+
+        <!-- Add Source Card -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">➕ Dodaj Nowe Źródło</h2>
+            </div>
+            <form id="add-source-form">
+                <div class="form-group">
+                    <label class="form-label" for="source-name">Nazwa źródła</label>
+                    <input
+                        type="text"
+                        id="source-name"
+                        class="form-input"
+                        placeholder="np. Marketing przy Kawie"
+                        required
+                    >
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="source-url">URL Feedu</label>
+                    <input
+                        type="url"
+                        id="source-url"
+                        class="form-input"
+                        placeholder="https://example.com/feed"
+                        required
+                    >
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="source-type">Typ źródła</label>
+                    <select id="source-type" class="form-select" required>
+                        <option value="rss">RSS Feed</option>
+                        <option value="blog">Blog</option>
+                        <option value="sitemap">Sitemap</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary">Dodaj Źródło</button>
+            </form>
+        </div>
+
+        <!-- Sources List Card -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">📋 Lista Źródeł</h2>
+                <div class="flex flex-gap items-center">
+                    <label>
+                        <input type="checkbox" id="show-inactive" onchange="loadSources()">
+                        Pokaż nieaktywne
+                    </label>
+                    <button class="btn btn-secondary btn-sm" onclick="loadSources()">
+                        🔄 Odśwież
+                    </button>
+                </div>
+            </div>
+
+            <!-- Loading Spinner -->
+            <div id="loading-spinner" class="spinner" style="display: none;"></div>
+
+            <!-- Sources Table -->
+            <div class="table-container">
+                <table id="sources-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Nazwa</th>
+                            <th>URL</th>
+                            <th>Typ</th>
+                            <th>Ostatni scraping</th>
+                            <th>Status</th>
+                            <th>Akcje</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sources-tbody">
+                        <!-- Sources will be loaded here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="edit-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">✏️ Edytuj Źródło</h2>
+                <button class="modal-close" onclick="closeEditModal()">&times;</button>
+            </div>
+            <form id="edit-source-form">
+                <input type="hidden" id="edit-source-id">
+                <div class="form-group">
+                    <label class="form-label" for="edit-source-name">Nazwa źródła</label>
+                    <input
+                        type="text"
+                        id="edit-source-name"
+                        class="form-input"
+                        required
+                    >
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-source-url">URL Feedu</label>
+                    <input
+                        type="url"
+                        id="edit-source-url"
+                        class="form-input"
+                        required
+                    >
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-source-type">Typ źródła</label>
+                    <select id="edit-source-type" class="form-select" required>
+                        <option value="rss">RSS Feed</option>
+                        <option value="blog">Blog</option>
+                        <option value="sitemap">Sitemap</option>
+                    </select>
+                </div>
+                <div class="flex flex-gap">
+                    <button type="submit" class="btn btn-primary">Zapisz zmiany</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Anuluj</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script>
+        // Show alert message
+        function showAlert(message, type = 'success') {
+            const alertContainer = document.getElementById('alert-container');
+            const alertClass = type === 'success' ? 'alert-success' : 'alert-error';
+
+            const alertHtml = `
+                <div class="alert ${alertClass}">
+                    ${message}
+                </div>
+            `;
+
+            alertContainer.innerHTML = alertHtml;
+
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                alertContainer.innerHTML = '';
+            }, 5000);
+        }
+
+        // Format date
+        function formatDate(dateString) {
+            if (!dateString) return 'Nigdy';
+            const date = new Date(dateString);
+            return date.toLocaleString('pl-PL');
+        }
+
+        // Load sources from API
+        async function loadSources() {
+            const tbody = document.getElementById('sources-tbody');
+            const spinner = document.getElementById('loading-spinner');
+            const showInactive = document.getElementById('show-inactive').checked;
+
+            try {
+                spinner.style.display = 'block';
+                tbody.innerHTML = '';
+
+                const sources = await api.getSources(!showInactive);
+
+                if (sources.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="7" class="text-center text-muted">
+                                Brak źródeł do wyświetlenia
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                sources.forEach(source => {
+                    const row = document.createElement('tr');
+                    const statusBadge = source.active
+                        ? '<span class="badge badge-success">Aktywne</span>'
+                        : '<span class="badge badge-danger">Nieaktywne</span>';
+
+                    row.innerHTML = `
+                        <td>${source.id}</td>
+                        <td><strong>${source.name}</strong></td>
+                        <td><span class="text-sm">${source.url.substring(0, 50)}${source.url.length > 50 ? '...' : ''}</span></td>
+                        <td><span class="badge badge-info">${source.source_type}</span></td>
+                        <td class="text-sm">${formatDate(source.last_scraped)}</td>
+                        <td>${statusBadge}</td>
+                        <td>
+                            <div class="flex flex-gap">
+                                <button class="btn btn-secondary btn-sm" onclick="openEditModal(${source.id})">
+                                    ✏️ Edytuj
+                                </button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteSource(${source.id}, '${source.name}')">
+                                    🗑️ Usuń
+                                </button>
+                            </div>
+                        </td>
+                    `;
+
+                    tbody.appendChild(row);
+                });
+
+            } catch (error) {
+                showAlert('Błąd wczytywania źródeł: ' + error.message, 'error');
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center text-muted">
+                            Błąd wczytywania danych
+                        </td>
+                    </tr>
+                `;
+            } finally {
+                spinner.style.display = 'none';
+            }
+        }
+
+        // Add source form handler
+        document.getElementById('add-source-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const name = document.getElementById('source-name').value;
+            const url = document.getElementById('source-url').value;
+            const type = document.getElementById('source-type').value;
+
+            try {
+                await api.addSource(name, url, type);
+                showAlert(`Źródło "${name}" zostało dodane pomyślnie!`, 'success');
+
+                // Clear form
+                document.getElementById('add-source-form').reset();
+
+                // Reload sources
+                loadSources();
+
+            } catch (error) {
+                showAlert('Błąd dodawania źródła: ' + error.message, 'error');
+            }
+        });
+
+        // Open edit modal
+        async function openEditModal(sourceId) {
+            try {
+                const sources = await api.getSources(false);
+                const source = sources.find(s => s.id === sourceId);
+
+                if (!source) {
+                    showAlert('Nie znaleziono źródła', 'error');
+                    return;
+                }
+
+                document.getElementById('edit-source-id').value = source.id;
+                document.getElementById('edit-source-name').value = source.name;
+                document.getElementById('edit-source-url').value = source.url;
+                document.getElementById('edit-source-type').value = source.source_type;
+
+                document.getElementById('edit-modal').classList.add('active');
+
+            } catch (error) {
+                showAlert('Błąd wczytywania danych źródła: ' + error.message, 'error');
+            }
+        }
+
+        // Close edit modal
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.remove('active');
+        }
+
+        // Edit source form handler
+        document.getElementById('edit-source-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const id = document.getElementById('edit-source-id').value;
+            const name = document.getElementById('edit-source-name').value;
+            const url = document.getElementById('edit-source-url').value;
+            const type = document.getElementById('edit-source-type').value;
+
+            try {
+                await api.updateSource(id, name, url, type);
+                showAlert(`Źródło "${name}" zostało zaktualizowane!`, 'success');
+
+                closeEditModal();
+                loadSources();
+
+            } catch (error) {
+                showAlert('Błąd aktualizacji źródła: ' + error.message, 'error');
+            }
+        });
+
+        // Delete source
+        async function deleteSource(sourceId, sourceName) {
+            if (!confirm(`Czy na pewno chcesz usunąć źródło "${sourceName}"?\n\nŹródło zostanie dezaktywowane (soft delete).`)) {
+                return;
+            }
+
+            try {
+                await api.deleteSource(sourceId);
+                showAlert(`Źródło "${sourceName}" zostało usunięte!`, 'success');
+                loadSources();
+
+            } catch (error) {
+                showAlert('Błąd usuwania źródła: ' + error.message, 'error');
+            }
+        }
+
+        // Load sources on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSources();
+        });
+    </script>
+</body>
+</html>

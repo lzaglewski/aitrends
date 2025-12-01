@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trendy - AI Trends Monitor</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-container">
+            <a href="index.html" class="nav-brand">📊 AI Trends Monitor</a>
+            <ul class="nav-links">
+                <li><a href="index.html">Dashboard</a></li>
+                <li><a href="sources.html">Źródła</a></li>
+                <li><a href="articles.html">Artykuły</a></li>
+                <li><a href="trends.html" class="active">Trendy</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container">
+        <div class="page-header">
+            <h1>📈 Trendy</h1>
+            <p>Analizuj rosnące, nowe i malejące słowa kluczowe</p>
+        </div>
+
+        <!-- Period Selector -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">⏱️ Okres analizy</h2>
+            </div>
+            <div class="flex flex-gap">
+                <button class="btn btn-secondary" onclick="changePeriod(7)">
+                    Ostatnie 7 dni
+                </button>
+                <button class="btn btn-primary" onclick="changePeriod(30)">
+                    Ostatnie 30 dni
+                </button>
+                <button class="btn btn-secondary" onclick="changePeriod(90)">
+                    Ostatnie 90 dni
+                </button>
+            </div>
+            <p class="text-muted text-sm mt-2">
+                Obecnie wyświetlane: <strong id="current-period">30 dni</strong>
+            </p>
+        </div>
+
+        <!-- Trending Keywords -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">📈 Rosnące Słowa Kluczowe</h2>
+                <span class="badge badge-success" id="trending-count">0</span>
+            </div>
+            <p class="text-muted text-sm mb-2">
+                Słowa kluczowe, które zyskują na popularności (wzrost > 20%)
+            </p>
+            <div id="loading-trending" class="spinner" style="display: none;"></div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Słowo kluczowe</th>
+                            <th>Liczba wystąpień</th>
+                            <th>Wzrost</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trending-tbody">
+                        <tr>
+                            <td colspan="4" class="text-center text-muted">Wczytywanie...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Emerging Keywords -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">🌟 Nowe Słowa Kluczowe</h2>
+                <span class="badge badge-info" id="emerging-count">0</span>
+            </div>
+            <p class="text-muted text-sm mb-2">
+                Całkowicie nowe słowa kluczowe, które nie występowały w poprzednim okresie
+            </p>
+            <div id="loading-emerging" class="spinner" style="display: none;"></div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Słowo kluczowe</th>
+                            <th>Liczba wystąpień</th>
+                            <th>Info</th>
+                        </tr>
+                    </thead>
+                    <tbody id="emerging-tbody">
+                        <tr>
+                            <td colspan="3" class="text-center text-muted">Wczytywanie...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Declining Keywords -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">📉 Malejące Słowa Kluczowe</h2>
+                <span class="badge badge-warning" id="declining-count">0</span>
+            </div>
+            <p class="text-muted text-sm mb-2">
+                Słowa kluczowe, które tracą na popularności
+            </p>
+            <div id="loading-declining" class="spinner" style="display: none;"></div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Słowo kluczowe</th>
+                            <th>Liczba wystąpień</th>
+                            <th>Spadek</th>
+                        </tr>
+                    </thead>
+                    <tbody id="declining-tbody">
+                        <tr>
+                            <td colspan="3" class="text-center text-muted">Wczytywanie...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Top Keywords -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">🔑 Najpopularniejsze Słowa Kluczowe</h2>
+            </div>
+            <p class="text-muted text-sm mb-2">
+                Top 50 najczęściej występujących słów kluczowych
+            </p>
+            <div id="loading-keywords" class="spinner" style="display: none;"></div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Słowo kluczowe</th>
+                            <th>Liczba wystąpień</th>
+                        </tr>
+                    </thead>
+                    <tbody id="keywords-tbody">
+                        <tr>
+                            <td colspan="3" class="text-center text-muted">Wczytywanie...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script>
+        let currentDays = 30;
+
+        // Change period
+        function changePeriod(days) {
+            currentDays = days;
+            document.getElementById('current-period').textContent = `${days} dni`;
+
+            // Update button styles
+            document.querySelectorAll('.card button').forEach(btn => {
+                if (btn.textContent.includes(days)) {
+                    btn.className = 'btn btn-primary';
+                } else {
+                    btn.className = 'btn btn-secondary';
+                }
+            });
+
+            loadTrendingKeywords();
+            loadEmergingKeywords();
+            loadDecliningKeywords();
+        }
+
+        // Load trending keywords
+        async function loadTrendingKeywords() {
+            const tbody = document.getElementById('trending-tbody');
+            const spinner = document.getElementById('loading-trending');
+            const countBadge = document.getElementById('trending-count');
+
+            try {
+                spinner.style.display = 'block';
+                tbody.innerHTML = '';
+
+                const trends = await api.getTrends(currentDays, 50);
+
+                countBadge.textContent = trends.length;
+
+                if (trends.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="4" class="text-center text-muted">
+                                Brak rosnących słów kluczowych w tym okresie
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                trends.forEach(trend => {
+                    const row = document.createElement('tr');
+                    const growthPercent = (trend.growth_rate * 100).toFixed(1);
+
+                    row.innerHTML = `
+                        <td><strong>${trend.keyword}</strong></td>
+                        <td>${trend.count}</td>
+                        <td><span class="badge badge-success">+${growthPercent}%</span></td>
+                        <td><span class="badge badge-success">📈 Rosnący</span></td>
+                    `;
+
+                    tbody.appendChild(row);
+                });
+
+            } catch (error) {
+                console.error('Error loading trending keywords:', error);
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center text-muted">
+                            Błąd wczytywania danych
+                        </td>
+                    </tr>
+                `;
+            } finally {
+                spinner.style.display = 'none';
+            }
+        }
+
+        // Load emerging keywords
+        async function loadEmergingKeywords() {
+            const tbody = document.getElementById('emerging-tbody');
+            const spinner = document.getElementById('loading-emerging');
+            const countBadge = document.getElementById('emerging-count');
+
+            try {
+                spinner.style.display = 'block';
+                tbody.innerHTML = '';
+
+                const emerging = await api.getEmergingTrends(currentDays, 50);
+
+                countBadge.textContent = emerging.length;
+
+                if (emerging.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="3" class="text-center text-muted">
+                                Brak nowych słów kluczowych w tym okresie
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                emerging.forEach(keyword => {
+                    const row = document.createElement('tr');
+
+                    row.innerHTML = `
+                        <td><strong>${keyword.keyword}</strong></td>
+                        <td>${keyword.count}</td>
+                        <td><span class="badge badge-info">🌟 Nowe</span></td>
+                    `;
+
+                    tbody.appendChild(row);
+                });
+
+            } catch (error) {
+                console.error('Error loading emerging keywords:', error);
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="3" class="text-center text-muted">
+                            Błąd wczytywania danych
+                        </td>
+                    </tr>
+                `;
+            } finally {
+                spinner.style.display = 'none';
+            }
+        }
+
+        // Load declining keywords
+        async function loadDecliningKeywords() {
+            const tbody = document.getElementById('declining-tbody');
+            const spinner = document.getElementById('loading-declining');
+            const countBadge = document.getElementById('declining-count');
+
+            try {
+                spinner.style.display = 'block';
+                tbody.innerHTML = '';
+
+                const declining = await api.getDecliningTrends(currentDays, 50);
+
+                countBadge.textContent = declining.length;
+
+                if (declining.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="3" class="text-center text-muted">
+                                Brak malejących słów kluczowych w tym okresie
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                declining.forEach(keyword => {
+                    const row = document.createElement('tr');
+                    const declinePercent = Math.abs(keyword.growth_rate * 100).toFixed(1);
+
+                    row.innerHTML = `
+                        <td><strong>${keyword.keyword}</strong></td>
+                        <td>${keyword.count}</td>
+                        <td><span class="badge badge-warning">-${declinePercent}%</span></td>
+                    `;
+
+                    tbody.appendChild(row);
+                });
+
+            } catch (error) {
+                console.error('Error loading declining keywords:', error);
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="3" class="text-center text-muted">
+                            Błąd wczytywania danych
+                        </td>
+                    </tr>
+                `;
+            } finally {
+                spinner.style.display = 'none';
+            }
+        }
+
+        // Load top keywords
+        async function loadTopKeywords() {
+            const tbody = document.getElementById('keywords-tbody');
+            const spinner = document.getElementById('loading-keywords');
+
+            try {
+                spinner.style.display = 'block';
+                tbody.innerHTML = '';
+
+                const keywords = await api.getKeywords(50);
+
+                if (keywords.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="3" class="text-center text-muted">
+                                Brak słów kluczowych
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                keywords.forEach((keyword, index) => {
+                    const row = document.createElement('tr');
+
+                    row.innerHTML = `
+                        <td>${index + 1}</td>
+                        <td><strong>${keyword.keyword}</strong></td>
+                        <td>${keyword.count}</td>
+                    `;
+
+                    tbody.appendChild(row);
+                });
+
+            } catch (error) {
+                console.error('Error loading top keywords:', error);
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="3" class="text-center text-muted">
+                            Błąd wczytywania danych
+                        </td>
+                    </tr>
+                `;
+            } finally {
+                spinner.style.display = 'none';
+            }
+        }
+
+        // Load all data on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTrendingKeywords();
+            loadEmergingKeywords();
+            loadDecliningKeywords();
+            loadTopKeywords();
+        });
+    </script>
+</body>
+</html>

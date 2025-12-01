@@ -1,0 +1,33 @@
+# Scraping
+scrapy>=2.11.0
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+trafilatura>=1.6.0
+newspaper3k>=0.2.8
+feedparser>=6.0.10
+lxml>=4.9.0
+
+# NLP
+spacy>=3.7.0
+gensim>=4.3.0
+scikit-learn>=1.3.0
+yake>=0.4.8
+nltk>=3.8.0
+
+# Database
+sqlalchemy>=2.0.0
+alembic>=1.12.0
+
+# API
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic-settings>=2.0.0
+
+# Utils
+pyyaml>=6.0.0
+schedule>=1.2.0
+python-dotenv>=1.0.0
+pandas>=2.1.0
+tqdm>=4.66.0
+loguru>=0.7.0
+ratelimit>=2.2.1

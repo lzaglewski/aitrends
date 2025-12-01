@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: ad-trends-monitor
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - DATABASE_URL=sqlite:///./data/trends.db
+      - SCRAPE_INTERVAL_HOURS=6
+      - MAX_ARTICLES_PER_SOURCE=50
+      - MIN_ARTICLE_LENGTH=200
+      - TREND_WINDOW_DAYS=30
+      - TOP_KEYWORDS_COUNT=20
+      - REQUEST_DELAY_SECONDS=2
+    restart: unless-stopped
+    command: sh -c "python main.py & uvicorn src.api.routes:app --host 0.0.0.0 --port 8000"
+
+  # Opcjonalnie: PostgreSQL dla produkcji
+  # db:
+  #   image: postgres:15
+  #   container_name: ad-trends-db
+  #   environment:
+  #     POSTGRES_DB: adtrends
+  #     POSTGRES_USER: adtrends
+  #     POSTGRES_PASSWORD: changeme
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   restart: unless-stopped
+
+# volumes:
+#   postgres_data:

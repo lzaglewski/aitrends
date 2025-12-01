@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Artykuły - AI Trends Monitor</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-container">
+            <a href="index.html" class="nav-brand">📊 AI Trends Monitor</a>
+            <ul class="nav-links">
+                <li><a href="index.html">Dashboard</a></li>
+                <li><a href="sources.html">Źródła</a></li>
+                <li><a href="articles.html" class="active">Artykuły</a></li>
+                <li><a href="trends.html">Trendy</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container">
+        <div class="page-header">
+            <h1>📰 Artykuły</h1>
+            <p>Przeglądaj i wyszukuj zebrane artykuły</p>
+        </div>
+
+        <!-- Filters Card -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">🔍 Filtry</h2>
+            </div>
+            <div class="flex flex-gap" style="flex-wrap: wrap;">
+                <div class="form-group" style="flex: 1; min-width: 200px;">
+                    <label class="form-label">Szukaj słowa kluczowego</label>
+                    <input
+                        type="text"
+                        id="keyword-filter"
+                        class="form-input"
+                        placeholder="np. marketing, AI, digital"
+                    >
+                </div>
+                <div class="form-group" style="flex: 1; min-width: 200px;">
+                    <label class="form-label">Źródło</label>
+                    <select id="source-filter" class="form-select">
+                        <option value="">Wszystkie źródła</option>
+                    </select>
+                </div>
+                <div class="form-group" style="flex: 1; min-width: 200px;">
+                    <label class="form-label">Okres</label>
+                    <select id="days-filter" class="form-select">
+                        <option value="">Wszystkie</option>
+                        <option value="7">Ostatnie 7 dni</option>
+                        <option value="30" selected>Ostatnie 30 dni</option>
+                        <option value="90">Ostatnie 90 dni</option>
+                    </select>
+                </div>
+                <div class="form-group" style="flex: 1; min-width: 200px;">
+                    <label class="form-label">Limit</label>
+                    <select id="limit-filter" class="form-select">
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="loadArticles()">
+                🔍 Szukaj
+            </button>
+        </div>
+
+        <!-- Articles Card -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">📋 Lista Artykułów</h2>
+                <button class="btn btn-secondary btn-sm" onclick="loadArticles()">
+                    🔄 Odśwież
+                </button>
+            </div>
+
+            <!-- Loading Spinner -->
+            <div id="loading-spinner" class="spinner" style="display: none;"></div>
+
+            <!-- Articles Table -->
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Tytuł</th>
+                            <th>Źródło</th>
+                            <th>Data publikacji</th>
+                            <th>Liczba słów</th>
+                            <th>Akcje</th>
+                        </tr>
+                    </thead>
+                    <tbody id="articles-tbody">
+                        <tr>
+                            <td colspan="6" class="text-center text-muted">
+                                Użyj filtrów i kliknij "Szukaj"
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script>
+        // Format date
+        function formatDate(dateString) {
+            if (!dateString) return 'Brak daty';
+            const date = new Date(dateString);
+            return date.toLocaleString('pl-PL');
+        }
+
+        // Load sources for filter
+        async function loadSourcesFilter() {
+            try {
+                const sources = await api.getSources(true);
+                const select = document.getElementById('source-filter');
+
+                sources.forEach(source => {
+                    const option = document.createElement('option');
+                    option.value = source.id;
+                    option.textContent = source.name;
+                    select.appendChild(option);
+                });
+
+            } catch (error) {
+                console.error('Error loading sources filter:', error);
+            }
+        }
+
+        // Load articles
+        async function loadArticles() {
+            const tbody = document.getElementById('articles-tbody');
+            const spinner = document.getElementById('loading-spinner');
+
+            const keyword = document.getElementById('keyword-filter').value;
+            const sourceId = document.getElementById('source-filter').value;
+            const days = document.getElementById('days-filter').value;
+            const limit = document.getElementById('limit-filter').value;
+
+            try {
+                spinner.style.display = 'block';
+                tbody.innerHTML = '';
+
+                const params = {
+                    limit: parseInt(limit)
+                };
+
+                if (keyword) params.keyword = keyword;
+                if (sourceId) params.source_id = parseInt(sourceId);
+                if (days) params.days = parseInt(days);
+
+                const articles = await api.getArticles(params);
+
+                if (articles.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="6" class="text-center text-muted">
+                                Nie znaleziono artykułów spełniających kryteria
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                articles.forEach(article => {
+                    const row = document.createElement('tr');
+
+                    row.innerHTML = `
+                        <td>${article.id}</td>
+                        <td>
+                            <strong>${article.title}</strong>
+                        </td>
+                        <td><span class="text-sm">${article.source_name}</span></td>
+                        <td class="text-sm">${formatDate(article.published_date)}</td>
+                        <td>${article.word_count}</td>
+                        <td>
+                            <a href="${article.url}" target="_blank" class="btn btn-primary btn-sm">
+                                🔗 Otwórz
+                            </a>
+                        </td>
+                    `;
+
+                    tbody.appendChild(row);
+                });
+
+            } catch (error) {
+                console.error('Error loading articles:', error);
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center text-muted">
+                            Błąd wczytywania artykułów: ${error.message}
+                        </td>
+                    </tr>
+                `;
+            } finally {
+                spinner.style.display = 'none';
+            }
+        }
+
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSourcesFilter();
+            loadArticles();
+        });
+
+        // Add enter key listener for keyword search
+        document.getElementById('keyword-filter').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                loadArticles();
+            }
+        });
+    </script>
+</body>
+</html>
