@@ -1,11 +1,11 @@
 from sqlalchemy import create_engine, func
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, joinedload
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 import hashlib
 from loguru import logger
 
-from .models import Base, Source, Article, Keyword, Trend, FailedUrl
+from .models import Base, Source, Article, Keyword, Topic, Trend, FailedUrl
 from ..config import settings
 
 
@@ -117,7 +117,7 @@ class Database:
     ) -> List[Article]:
         """Get articles with optional filters."""
         with self.get_session() as session:
-            query = session.query(Article)
+            query = session.query(Article).options(joinedload(Article.source))
 
             if source_id:
                 query = query.filter(Article.source_id == source_id)
@@ -131,7 +131,13 @@ class Database:
             if keyword:
                 query = query.join(Keyword).filter(Keyword.keyword.ilike(f"%{keyword}%"))
 
-            return query.order_by(Article.published_date.desc()).limit(limit).all()
+            articles = query.order_by(Article.published_date.desc()).limit(limit).all()
+
+            # Explicitly access source.name to ensure it's loaded
+            for article in articles:
+                _ = article.source.name
+
+            return articles
 
     # Keyword operations
     def save_keywords(self, article_id: int, keywords: List[tuple]):
@@ -202,6 +208,97 @@ class Database:
                 .all()
             )
             return results
+
+    # Topic operations
+    def save_topics(self, topics_info: Dict[int, Dict]):
+        """
+        Save or update topic metadata.
+
+        Args:
+            topics_info: Dict mapping topic_id to topic metadata
+        """
+        import json
+
+        with self.get_session() as session:
+            for topic_id, info in topics_info.items():
+                # Check if topic already exists
+                existing = session.query(Topic).filter(Topic.topic_id == topic_id).first()
+
+                if existing:
+                    # Update existing topic
+                    existing.topic_name = info['name']
+                    existing.top_words = json.dumps(info['top_words'])
+                    existing.size = info.get('size', 0)
+                    existing.updated_at = datetime.utcnow()
+                else:
+                    # Create new topic
+                    topic = Topic(
+                        topic_id=topic_id,
+                        topic_name=info['name'],
+                        top_words=json.dumps(info['top_words']),
+                        size=info.get('size', 0)
+                    )
+                    session.add(topic)
+
+            session.commit()
+            logger.info(f"Saved {len(topics_info)} topics")
+
+    def update_article_topic(self, article_id: int, topic_id: int, cleaned_content: str = None):
+        """
+        Update article's topic assignment.
+
+        Args:
+            article_id: Article ID
+            topic_id: Topic ID from BERTopic
+            cleaned_content: Optional cleaned content
+        """
+        with self.get_session() as session:
+            article = session.query(Article).filter(Article.id == article_id).first()
+            if article:
+                article.topic_id = topic_id
+                if cleaned_content:
+                    article.cleaned_content = cleaned_content
+                session.commit()
+
+    def get_articles_by_topic(self, topic_id: int, limit: int = 20) -> List[Article]:
+        """Get articles assigned to a specific topic."""
+        with self.get_session() as session:
+            return (
+                session.query(Article)
+                .options(joinedload(Article.source))
+                .filter(Article.topic_id == topic_id)
+                .order_by(Article.published_date.desc())
+                .limit(limit)
+                .all()
+            )
+
+    def get_topic_counts(
+        self,
+        start_date: datetime,
+        end_date: datetime
+    ) -> Dict[int, int]:
+        """
+        Get topic counts for a time period.
+
+        Returns:
+            Dict mapping topic_id to count
+        """
+        with self.get_session() as session:
+            results = (
+                session.query(Article.topic_id, func.count(Article.id))
+                .filter(Article.published_date >= start_date)
+                .filter(Article.published_date <= end_date)
+                .filter(Article.topic_id != None)
+                .filter(Article.topic_id != -1)  # Exclude outliers
+                .group_by(Article.topic_id)
+                .all()
+            )
+            return {topic_id: count for topic_id, count in results}
+
+    def get_all_topics(self) -> List[Topic]:
+        """Get all topics."""
+        with self.get_session() as session:
+            return session.query(Topic).all()
 
     # Trend operations
     def save_trends(self, trends: List[Dict]):

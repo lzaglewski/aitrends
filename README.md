@@ -1,466 +1,394 @@
-# Ad Trends Monitor
+# AI Trends Monitor v2.1
 
-Monitor advertising industry trends from public sources (blogs, RSS feeds) and identify emerging topics using NLP and trend analysis.
+Monitor advertising and marketing industry trends using **semantic topic modeling** with BERTopic + **LLM-enhanced trend identification**. Automatically identifies emerging themes and tracks topic evolution over time.
 
-## Features
+## 🎯 What's New in v2.1
 
-- **RSS Feed Monitoring**: Automatically fetch articles from RSS feeds
-- **Keyword Extraction**: Multi-method keyword extraction (YAKE, spaCy NER)
-- **Trend Detection**: Identify trending, emerging, and declining topics
-- **REST API**: FastAPI-based API for accessing trends and articles
+**LLM Enhancement** - Hybrid BERTopic + GPT-4o-mini for better trend identification:
+
+- ✅ **Context Understanding**: LLM distinguishes real trends from company news
+- ✅ **Better Naming**: Natural language trend names instead of keyword combinations
+- ✅ **Quality Filtering**: Filters out noise topics (Polish declensions, stopwords)
+- ✅ **Cost Effective**: ~$0.12/month using gpt-4o-mini
+
+## 🎯 What's New in v2.0
+
+**Completely refactored** from keyword-based to topic-based trend detection:
+
+- ✅ **BERTopic**: Semantic topic modeling instead of keyword extraction
+- ✅ **Multilingual Support**: Handles English, Polish, and mixed sources
+- ✅ **Named Entity Filtering**: Removes company/person names from trends
+- ✅ **Better Insights**: Detects thematic concepts, not just word frequencies
+- ✅ **Email/Slack Formatters**: Ready for automated delivery
+
+### Before vs. After
+
+**v1.0 (Keyword-Based)**:
+```
+Trending:
+- Google (15 occurrences)
+- CEO John Doe (8 occurrences)
+- Search Console (12 occurrences)
+```
+
+**v2.0 (Topic-Based with BERTopic only)**:
+```
+Trending Topics:
+- Search + Content + Business (+156%)
+- Ponad + Kampanii + Rynku (NEW)  ← Polish declensions
+- Google + Gemini + AI (+89%)    ← Company names
+```
+
+**v2.1 (LLM-Enhanced)**:
+```
+Trending Topics:
+- AI-Powered Content Generation in Advertising (+156%)
+  Description: Major platforms integrating generative AI for ad creation
+
+- Privacy-First Marketing Strategies (NEW)
+  Description: Industry shift toward cookieless tracking and consent management
+```
+
+## 🚀 Features
+
+- **LLM-Enhanced Trend Analysis**: GPT-4o-mini validates and names trends with context understanding
+- **Semantic Topic Modeling**: Uses BERTopic to identify thematic clusters
+- **RSS Feed Monitoring**: Automatically fetch articles from marketing/AI sources
+- **Trend Detection**: Identify trending, new, and declining topics
+- **Multi-format Output**: Console, Email (HTML), Slack, JSON
 - **SQLite Database**: Local storage with deduplication
 - **Automated Scheduling**: Periodic scraping with configurable intervals
 
-## Project Structure
+## 📁 Project Structure
 
 ```
-ad-trends-monitor/
+AI_TRENDS/
 ├── src/
-│   ├── scrapers/         # RSS fetcher and web scrapers
-│   ├── processors/       # Text processing and keyword extraction
-│   ├── analyzers/        # Trend detection and analysis
-│   ├── storage/          # Database models and operations
-│   ├── api/              # FastAPI routes
-│   └── config.py         # Configuration
+│   ├── scrapers/           # RSS fetcher and web scrapers
+│   ├── processors/         # Text extraction (TopicExtractor)
+│   ├── analyzers/          # Topic modeling (BERTopic), trend detection
+│   ├── formatters/         # Output formatters (console, email, slack)
+│   ├── storage/            # Database models and operations
+│   └── config.py           # Configuration
 ├── data/
-│   ├── sources.yaml      # List of sources to monitor
-│   └── trends.db         # SQLite database (created automatically)
-├── logs/                 # Application logs
-├── main.py               # Main scheduler
-└── requirements.txt      # Python dependencies
+│   ├── sources.yaml        # List of RSS sources to monitor
+│   ├── trends.db           # SQLite database (auto-created)
+│   └── models/             # Saved BERTopic models
+├── logs/                   # Application logs
+├── main.py                 # Main scheduler
+├── requirements.txt        # Python dependencies
+└── IMPLEMENTATION.md       # Detailed technical documentation
 ```
 
-## Quick Start
+## 🏃 Quick Start
 
-### Szybkie uruchomienie (jeden terminal)
+### 1. Installation
 
 ```bash
-# 1. Stwórz środowisko wirtualne
-python3 -m venv venv  # macOS/Linux
-# lub: python -m venv venv  # Windows
+# Clone repository
+git clone <repo-url>
+cd AI_TRENDS
+
+# Create virtual environment
+python3 -m venv venv
 source venv/bin/activate  # Linux/Mac
-# lub: venv\Scripts\activate  # Windows
+# or: venv\Scripts\activate  # Windows
 
-# 2. Zainstaluj zależności
-pip install -r requirements.txt
-
-# 3. Pobierz model spaCy dla języka polskiego (około 573 MB)
-python3 -m spacy download pl_core_news_lg
-
-# 4. Zainicjuj bazę danych
-python3 main.py --init-db
-
-# 5. Załaduj źródła z YAML do bazy
-python3 main.py --init-sources
-
-# 6. Uruchom pierwszy scraping (test)
-python3 main.py --once
-
-# 7. Uruchom API w osobnym oknie terminala
-uvicorn src.api.routes:app --reload --port 8000
-```
-
-Otwórz przeglądarkę: **http://localhost:8000/docs** aby zobaczyć dokumentację API.
-
-### Alternatywnie: Docker
-
-```bash
-# Zbuduj i uruchom całą aplikację w jednym kroku
-docker-compose up --build
-
-# API dostępne na: http://localhost:8000/docs
-```
-
-## Szczegółowa instalacja
-
-### 1. Stwórz środowisko wirtualne
-
-```bash
-python3 -m venv venv  # macOS/Linux
-# lub: python -m venv venv  # Windows
-source venv/bin/activate  # Linux/Mac
-# lub: venv\Scripts\activate  # Windows
-```
-
-### 2. Zainstaluj zależności
-
-```bash
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-**Uwaga**: Instalacja może potrwać kilka minut ze względu na biblioteki NLP (spaCy, gensim).
+### 1.5 Configure OpenAI API (for LLM Enhancement)
 
-### 3. Pobierz model spaCy
+Create a `.env` file in the project root:
 
 ```bash
-python -m spacy download pl_core_news_lg
+# OpenAI API Key for LLM Enhancement
+OPENAI_API_KEY=sk-proj-your-api-key-here
 ```
 
-Ten model (około 800MB) jest wymagany do analizy tekstu w języku polskim.
+**Note**: LLM enhancement is optional. Set `USE_LLM_ENHANCEMENT=False` in [src/config.py](src/config.py#L30) to disable.
 
-### 4. Konfiguracja środowiska (opcjonalnie)
-
-```bash
-cp .env.example .env
-```
-
-Edytuj plik `.env` aby zmienić ustawienia:
-- Interval scrapingu
-- Limity artykułów
-- Parametry detekcji trendów
-
-Plik `data/sources.yaml` już zawiera 20 gotowych źródeł RSS. Możesz go edytować aby dodać własne źródła.
-
-## Użycie
-
-### 1. Inicjalizacja bazy danych
+### 2. Initialize Database
 
 ```bash
+# Create database tables
 python main.py --init-db
+
+# Load sources from sources.yaml
+python main.py --init-sources
 ```
 
-Tworzy tabele w bazie SQLite (`data/trends.db`).
+### 3. Run the System
 
-### 2. Załadowanie źródeł
+#### One-Time Run
+```bash
+python main.py --once
+```
+Scrapes sources, runs topic modeling, calculates trends, and exits.
 
+#### Continuous Mode (Scheduler)
+```bash
+python main.py
+```
+Runs continuously, scraping every 6 hours (configurable).
+
+#### Re-run Topic Modeling
+```bash
+python main.py --remodel
+```
+Re-analyzes all articles with BERTopic. Use when changing topic modeling parameters.
+
+## ⚙️ Configuration
+
+Edit [src/config.py](src/config.py) or create `.env` file:
+
+```env
+# Database
+DATABASE_URL=sqlite:///./data/trends.db
+
+# Scraping
+SCRAPE_INTERVAL_HOURS=6
+MIN_ARTICLE_LENGTH=30
+
+# Topic Modeling
+TOPIC_MODEL_LANGUAGE=multilingual  # 'multilingual', 'en', 'pl'
+TOPIC_MIN_TOPIC_SIZE=8              # Minimum articles per topic
+TOPIC_MIN_DOCUMENT_LENGTH=50        # Minimum text length
+
+# LLM Enhancement (v2.1)
+USE_LLM_ENHANCEMENT=True            # Enable LLM-based trend analysis
+OPENAI_API_KEY=sk-proj-...          # OpenAI API key (or set in .env)
+LLM_MODEL=gpt-4o-mini               # Model to use
+LLM_MAX_ARTICLES_PER_TOPIC=5        # Cost control: max articles per topic
+LLM_TEMPERATURE=0.3                 # Lower = more focused
+
+# Trend Detection
+TREND_WINDOW_DAYS=30                # Compare last 30 vs. previous 30 days
+TREND_MIN_GROWTH_RATE=0.2           # 20% growth = trending
+
+# Output
+TREND_OUTPUT_FORMAT=console         # 'console', 'email', 'slack', 'json'
+TREND_MAX_DISPLAY=10                # Max trends to display
+```
+
+## 📊 Example Output
+
+### Console
+
+```
+================================================================================
+🔥 MARKETING & AI TRENDS (30 days)
+Generated: 2025-12-09 15:30 UTC
+================================================================================
+
+1. 🌟 Nowe AI + Content + Generation
+   Keywords: ai, content, generation, advertising, automation
+   Articles: 23 (previous: 0) | Growth: NEW
+   ----------------------------------------------------------------------------
+
+2. ⬆️ Rosnące Privacy + Marketing + Strategies
+   Keywords: privacy, cookies, tracking, gdpr, consent
+   Articles: 18 (previous: 10) | Growth: +80%
+   ----------------------------------------------------------------------------
+
+3. ⬆️ Rosnące Influencer + Marketing + ROI
+   Keywords: influencer, roi, measurement, analytics, performance
+   Articles: 15 (previous: 8) | Growth: +88%
+   ----------------------------------------------------------------------------
+```
+
+### Email (HTML)
+
+Set `TREND_OUTPUT_FORMAT=email` for formatted HTML tables suitable for newsletters.
+
+### Slack
+
+Set `TREND_OUTPUT_FORMAT=slack` for markdown-formatted messages.
+
+### JSON
+
+Set `TREND_OUTPUT_FORMAT=json` for structured data export.
+
+## 🔧 How It Works
+
+### Architecture
+
+```
+RSS Sources → Scrape Articles → Clean Text → BERTopic Clustering
+                                                      ↓
+                                              LLM Analysis (GPT-4o-mini)
+                                                      ↓
+                                              Validated Trends
+                                                      ↓
+                                              Database Storage
+                                                      ↓
+                                    Trend Detector (Compare Periods)
+                                                      ↓
+                                    Formatters (Console/Email/Slack)
+```
+
+### Hybrid BERTopic + LLM Pipeline
+
+1. **Embedding**: Convert articles to semantic vectors (Sentence Transformers)
+2. **Dimensionality Reduction**: UMAP to 5 dimensions
+3. **Clustering**: HDBSCAN to find topic clusters
+4. **Representation**: c-TF-IDF to extract topic keywords
+5. **LLM Analysis**: GPT-4o-mini validates trends and generates natural language names
+6. **Filtering**: Only real trends (not company news) are saved
+
+### Trend Detection
+
+- Compare topic frequencies: **last 30 days** vs. **previous 30 days**
+- Calculate growth rate: `(current - previous) / previous`
+- Mark as **trending** if growth ≥ 20%
+- Mark as **new** if topic didn't exist before
+
+## 📚 Documentation
+
+For detailed technical documentation, see [IMPLEMENTATION.md](IMPLEMENTATION.md):
+- Problem statement (why we replaced keywords with topics)
+- Architecture deep-dive
+- Database schema
+- Configuration options
+- Performance considerations
+- Future enhancements
+
+## 🧪 Testing
+
+```bash
+# Run on existing data (if database populated)
+python main.py --once
+
+# Re-run topic modeling
+python main.py --remodel
+
+# Debug LLM decisions (shows full prompts and responses)
+python main.py --remodel --debug
+
+# View LLM analysis in readable format
+./debug_llm_decisions.sh
+
+# Check database
+sqlite3 data/trends.db "SELECT * FROM topics LIMIT 5;"
+```
+
+### Debugging LLM Decisions
+
+To understand why topics were classified as trends or rejected:
+
+1. **Enable debug mode:**
+   ```bash
+   python main.py --remodel --debug
+   ```
+
+2. **View formatted analysis:**
+   ```bash
+   ./debug_llm_decisions.sh
+   ```
+
+   This shows:
+   - Articles sent to LLM for each topic
+   - BERTopic keywords
+   - Full LLM response with reasoning
+   - Summary of accepted/rejected trends
+
+3. **Check raw logs:**
+   ```bash
+   tail -f logs/ad_trends_$(date +%Y-%m-%d).log
+   ```
+
+📖 **Full debugging guide:** See [DEBUG_GUIDE.md](DEBUG_GUIDE.md) for detailed examples and troubleshooting.
+
+## 🛠️ Development
+
+### Adding New Sources
+
+Edit [data/sources.yaml](data/sources.yaml):
+
+```yaml
+sources:
+  - name: "Your Source Name"
+    url: "https://example.com/rss"
+    type: rss
+```
+
+Then reload:
 ```bash
 python main.py --init-sources
 ```
 
-Ładuje źródła z pliku `data/sources.yaml` do bazy danych.
+### Customizing Topic Modeling
 
-### 3. Uruchomienie scrapingu
+Edit parameters in `src/config.py`:
 
-#### Tryb testowy (jednorazowo)
+- `TOPIC_MIN_TOPIC_SIZE`: Smaller = more granular topics
+- `TOPIC_MODEL_LANGUAGE`:
+  - `'multilingual'`: Best for mixed sources (default)
+  - `'en'`: Faster for English-only
+  - `'pl'`: Optimized for Polish
 
-```bash
-python main.py --once
+### Output Formats
+
+Create custom formatters in `src/formatters/trend_summarizer.py`:
+
+```python
+def format_for_custom(trends, **kwargs):
+    # Your custom formatting logic
+    return formatted_output
 ```
 
-Wykonuje jeden cykl scrapingu i kończy działanie. Użyteczne do testowania.
+## 🐛 Troubleshooting
 
-#### Tryb ciągły (scheduler)
+### Issue: No topics detected
+- Check `MIN_ARTICLE_LENGTH` - may be filtering too many articles
+- Lower `TOPIC_MIN_TOPIC_SIZE` to allow smaller topics
+- Verify articles are being scraped: `sqlite3 data/trends.db "SELECT COUNT(*) FROM articles;"`
 
-```bash
-python main.py
-```
+### Issue: Poor topic quality
+- Increase `TOPIC_MIN_TOPIC_SIZE` for broader topics
+- Use language-specific model (`'en'` or `'pl'`) instead of multilingual
+- Run `--remodel` after changing parameters
 
-Uruchamia scheduler, który:
-- Wykonuje scraping natychmiast
-- Planuje kolejne uruchomienia co N godzin (domyślnie: 6h)
-- Działa w nieskończoność (zatrzymaj przez Ctrl+C)
+### Issue: Too many "new" topics
+- Increase `TREND_WINDOW_DAYS` for longer comparison window
+- Increase `TREND_MIN_COUNT` to filter low-frequency topics
 
-**Logi zapisywane są w**: `logs/ad_trends_YYYY-MM-DD.log`
+## 📦 Requirements
 
-### 4. Uruchomienie API
+- Python 3.9+
+- ~2GB RAM for topic modeling (100-200 articles)
+- ~500MB disk space (including models)
 
-W osobnym oknie terminala:
+### Key Dependencies
 
-```bash
-# Tryb development z hot reload
-uvicorn src.api.routes:app --reload --port 8000
+- `bertopic>=0.16.0` - Topic modeling
+- `sentence-transformers>=2.2.0` - Semantic embeddings
+- `umap-learn>=0.5.5` - Dimensionality reduction
+- `hdbscan>=0.8.33` - Clustering
+- `scikit-learn>=1.3.0` - Utilities
+- `openai>=1.0.0` - LLM enhancement (v2.1)
 
-# Tryb produkcyjny
-uvicorn src.api.routes:app --host 0.0.0.0 --port 8000
-```
+See [requirements.txt](requirements.txt) for complete list.
 
-**Dokumentacja API**: http://localhost:8000/docs
-**Alternatywna dokumentacja**: http://localhost:8000/redoc
+## 📝 License
 
-### 5. Przykładowe zapytania API
+[Your License]
 
-```bash
-# Pobierz trendy z ostatnich 30 dni
-curl http://localhost:8000/trends?days=30&limit=20
-
-# Wyszukaj artykuły po słowie kluczowym
-curl http://localhost:8000/articles?keyword=marketing&limit=10
-
-# Statystyki systemu
-curl http://localhost:8000/stats
-
-# Health check
-curl http://localhost:8000/health
-```
-
-## API Endpoints
-
-### Get Trends
-```bash
-GET /trends?days=30&limit=20
-```
-
-Returns keywords with growing frequency.
-
-### Get Emerging Keywords
-```bash
-GET /trends/emerging?days=30&limit=20
-```
-
-Returns completely new keywords.
-
-### Get Declining Keywords
-```bash
-GET /trends/declining?days=30&limit=20
-```
-
-Returns keywords decreasing in frequency.
-
-### Get Top Keywords
-```bash
-GET /keywords?limit=50
-```
-
-Returns most frequent keywords.
-
-### Search Articles
-```bash
-GET /articles?keyword=marketing&limit=20
-```
-
-Search articles by keyword.
-
-### List Sources
-```bash
-GET /sources
-```
-
-List all monitored sources.
-
-### Add Source
-```bash
-POST /sources
-{
-  "name": "Example Blog",
-  "url": "https://example.com/feed",
-  "source_type": "rss"
-}
-```
-
-### Get Statistics
-```bash
-GET /stats
-```
-
-Returns system statistics.
-
-## Configuration
-
-Edit `.env` or modify `src/config.py`:
-
-- `DATABASE_URL`: Database connection string
-- `SCRAPE_INTERVAL_HOURS`: Hours between scraping runs (default: 6)
-- `MAX_ARTICLES_PER_SOURCE`: Max articles to fetch per source (default: 50)
-- `MIN_ARTICLE_LENGTH`: Minimum article length in words (default: 200)
-- `TREND_WINDOW_DAYS`: Analysis window for trends (default: 30)
-- `TOP_KEYWORDS_COUNT`: Keywords to extract per article (default: 20)
-- `REQUEST_DELAY_SECONDS`: Delay between requests (default: 2)
-
-## Docker
-
-### Uruchomienie z Docker Compose (zalecane)
-
-```bash
-# Zbuduj i uruchom w tle
-docker-compose up --build -d
-
-# Zobacz logi
-docker-compose logs -f
-
-# Zatrzymaj
-docker-compose down
-```
-
-Docker Compose automatycznie:
-- Buduje kontener aplikacji
-- Uruchamia scheduler i API w jednym kontenerze
-- Eksponuje API na porcie 8000
-- Montuje katalogi `./data` i `./logs` dla trwałości danych
-- Automatycznie restartuje przy awarii
-
-**API dostępne na**: http://localhost:8000/docs
-
-### Ręczne uruchomienie Docker
-
-```bash
-# Zbuduj obraz
-docker build -t ad-trends-monitor .
-
-# Uruchom kontener
-docker run -d \
-  --name ad-trends \
-  -p 8000:8000 \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/logs:/app/logs \
-  ad-trends-monitor
-```
-
-### Przydatne komendy Docker
-
-```bash
-# Zobacz logi kontenera
-docker logs -f ad-trends-monitor
-
-# Wejdź do kontenera
-docker exec -it ad-trends-monitor bash
-
-# Zatrzymaj kontener
-docker stop ad-trends-monitor
-
-# Usuń kontener
-docker rm ad-trends-monitor
-```
-
-## Development
-
-### Run tests
-
-```bash
-pytest tests/ -v --cov=src
-```
-
-### Code style
-
-```bash
-black src/ tests/
-flake8 src/ tests/
-```
-
-## Trend Detection Algorithm
-
-The trend detector compares keyword frequencies between two time periods:
-
-1. **Current Period**: Last N days (default: 30)
-2. **Previous Period**: N days before that
-
-**Growth Rate** = (Current Count - Previous Count) / Previous Count
-
-Keywords with growth rate > 20% are marked as **trending**.
-
-## Keyword Extraction Methods
-
-1. **YAKE**: Unsupervised keyword extraction
-2. **spaCy**: Named Entity Recognition (NER) + noun chunks
-3. **Combined**: Aggregates results from all methods
-
-## License
-
-MIT License - Open source and free to use.
-
-## Contributing
+## 🤝 Contributing
 
 Contributions welcome! Please:
-
 1. Fork the repository
 2. Create a feature branch
-3. Add tests for new features
-4. Submit a pull request
+3. Submit a pull request
 
-## Rozwiązywanie problemów
+## 📧 Contact
 
-### Problem: "spaCy model not found"
+- Issues: [GitHub Issues]
+- Documentation: See [IMPLEMENTATION.md](IMPLEMENTATION.md)
 
-```bash
-# Upewnij się, że model jest pobrany
-python -m spacy download pl_core_news_lg
+---
 
-# Sprawdź zainstalowane modele
-python -m spacy info
-```
-
-### Problem: "Database locked"
-
-SQLite może mieć problemy z współbieżnością. Rozwiązania:
-1. Nie uruchamiaj wielu instancji `main.py` jednocześnie
-2. Dla produkcji rozważ PostgreSQL (instrukcje w `docker-compose.yml`)
-
-### Problem: "Too many requests" / Rate limiting
-
-```bash
-# Zwiększ opóźnienie między requestami w .env
-REQUEST_DELAY_SECONDS=5
-```
-
-### Problem: Brak artykułów w bazie
-
-1. Sprawdź czy źródła zostały załadowane: `curl http://localhost:8000/sources`
-2. Zobacz logi: `tail -f logs/ad_trends_*.log`
-3. Niektóre RSS feedy mogą blokować boty - sprawdź User-Agent w konfiguracji
-
-## Panel Administracyjny
-
-Projekt zawiera w pełni funkcjonalny panel administracyjny w HTML/CSS/JavaScript.
-
-### Dostęp do panelu
-
-Po uruchomieniu FastAPI, panel dostępny jest pod adresem:
-
-**http://localhost:8000/admin/**
-
-### Funkcje panelu
-
-- **Dashboard** (`/admin/index.html`)
-  - Statystyki systemu
-  - Ręczne uruchamianie scrapingu
-  - Top trendy i ostatnie artykuły
-
-- **Źródła** (`/admin/sources.html`)
-  - Dodawanie nowych źródeł RSS
-  - Edycja istniejących źródeł
-  - Usuwanie źródeł (soft delete)
-  - Filtrowanie aktywnych/nieaktywnych
-
-- **Artykuły** (`/admin/articles.html`)
-  - Wyszukiwanie po słowach kluczowych
-  - Filtrowanie po źródle i dacie
-  - Linkowanie do oryginalnych artykułów
-
-- **Trendy** (`/admin/trends.html`)
-  - Rosnące słowa kluczowe (wzrost > 20%)
-  - Nowe słowa kluczowe
-  - Malejące słowa kluczowe
-  - Top 50 najpopularniejszych słów
-
-Szczegółowa dokumentacja: `admin-panel/README.md`
-
-## Roadmap
-
-### Faza 2
-- [ ] Blog scraper (trafilatura + BeautifulSoup)
-- [ ] Sitemap crawler
-- [ ] Zaawansowana deduplikacja (fuzzy matching)
-
-### Faza 3
-- [ ] Topic modeling (LDA z gensim)
-- [ ] Sentiment analysis
-- [x] Web dashboard - **GOTOWE!** (HTML/CSS/JavaScript)
-
-### Faza 4
-- [ ] Export do CSV/JSON/Excel z panelu
-- [ ] Email/Slack alerty dla nowych trendów
-- [ ] PostgreSQL support
-- [ ] Elasticsearch dla full-text search
-- [ ] Caching (Redis)
-
-## Licencja
-
-MIT License - Projekt open source, darmowy do użytku komercyjnego i niekomercyjnego.
-
-## Contributing
-
-Kontrybucje mile widziane! Proszę:
-
-1. Forkuj repozytorium
-2. Stwórz branch dla nowej funkcji (`git checkout -b feature/nowa-funkcja`)
-3. Dodaj testy dla nowych funkcji
-4. Commituj zmiany (`git commit -m 'Dodaj nową funkcję'`)
-5. Push do brancha (`git push origin feature/nowa-funkcja`)
-6. Otwórz Pull Request
-
-## Wsparcie
-
-Dla pytań i problemów, proszę otworzyć GitHub Issue.
-
-## Autorzy
-
-Projekt stworzony z wykorzystaniem Claude Code na podstawie specyfikacji IMPL.md.
+**Version**: 2.1 (LLM-Enhanced)
+**Last Updated**: December 9, 2025
+**Status**: Production Ready ✅

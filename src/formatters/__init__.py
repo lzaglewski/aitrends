@@ -1,0 +1,1 @@
+"""Formatters for trend output."""

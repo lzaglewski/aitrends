@@ -1,221 +1,146 @@
-import yake
-import spacy
-from typing import List, Tuple, Dict
-from collections import Counter
+"""
+Topic Extractor - Replaces keyword extraction with topic-based extraction.
+
+This module extracts semantic topics from article content instead of
+individual keywords, focusing on thematic trends rather than specific terms.
+"""
+
+from typing import List, Tuple
 from loguru import logger
 from bs4 import BeautifulSoup
 import re
 
 
-class KeywordExtractor:
-    def __init__(self, language: str = 'pl'):
-        self.language = language
-        self.nlp = None
-        self._load_spacy_model()
+class TopicExtractor:
+    """
+    Extracts topics from article content using simple text analysis.
 
-    def _load_spacy_model(self):
-        """Load spaCy model for Polish."""
-        try:
-            self.nlp = spacy.load('pl_core_news_lg')
-            logger.info("Loaded spaCy model: pl_core_news_lg")
-        except OSError:
-            logger.warning("Polish spaCy model not found. Install with: python -m spacy download pl_core_news_lg")
-            self.nlp = None
+    Note: This is a lightweight version for individual articles.
+    The main topic modeling happens in TopicModeler using BERTopic across
+    multiple articles at once.
+    """
+
+    def __init__(self, language: str = 'multilingual'):
+        """
+        Initialize the topic extractor.
+
+        Args:
+            language: Language for processing ('multilingual', 'en', 'pl')
+        """
+        self.language = language
 
     def _clean_text(self, text: str) -> str:
-        """Clean HTML and extra whitespace from text."""
+        """
+        Clean HTML and extra whitespace from text.
+
+        Args:
+            text: Raw text
+
+        Returns:
+            Cleaned text
+        """
         # Remove HTML tags
         soup = BeautifulSoup(text, 'html.parser')
         text = soup.get_text()
+
+        # Remove URLs
+        text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
+
+        # Remove email addresses
+        text = re.sub(r'\S+@\S+', '', text)
+
+        # Remove RSS feed artifacts
+        text = re.sub(r'\bappeared\s+(?:in|on|at)\b', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bpost\s+appeared\b', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bsource:\s*\S+', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bvia\s+\S+', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bread more:?\b', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bcontinue reading\b', '', text, flags=re.IGNORECASE)
+
+        # Remove standalone dates (e.g., "December 9", "Dec 9, 2025")
+        text = re.sub(r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:,\s*\d{4})?\b', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:,\s*\d{4})?\b', '', text, flags=re.IGNORECASE)
+
+        # Remove standalone numbers (likely metadata)
+        text = re.sub(r'\b\d{4}\b', '', text)  # Years
+        text = re.sub(r'\b\d{1,2}:\d{2}\b', '', text)  # Times
 
         # Remove extra whitespace
         text = re.sub(r'\s+', ' ', text).strip()
 
         return text
 
-    def extract_yake(
-        self,
-        text: str,
-        max_keywords: int = 20,
-        max_ngram_size: int = 3
-    ) -> List[Tuple[str, float]]:
+    def extract_text(self, content: str) -> str:
         """
-        Extract keywords using YAKE (unsupervised).
+        Extract and clean text from article content.
 
         Args:
-            text: Text to extract keywords from
-            max_keywords: Maximum number of keywords
-            max_ngram_size: Maximum n-gram size (1-3)
+            content: Raw article content
 
         Returns:
-            List of tuples (keyword, score)
+            Cleaned text ready for topic modeling
         """
-        text = self._clean_text(text)
+        cleaned = self._clean_text(content)
 
-        try:
-            kw_extractor = yake.KeywordExtractor(
-                lan=self.language,
-                n=max_ngram_size,
-                dedupLim=0.7,
-                top=max_keywords,
-                features=None
-            )
+        logger.debug(f"Extracted {len(cleaned)} characters of clean text")
 
-            keywords = kw_extractor.extract_keywords(text)
+        return cleaned
 
-            # YAKE returns lower scores for better keywords, so invert them
-            normalized = [(kw, 1.0 - score) for kw, score in keywords]
-
-            logger.debug(f"Extracted {len(normalized)} keywords with YAKE")
-            return normalized
-
-        except Exception as e:
-            logger.error(f"Error extracting keywords with YAKE: {e}")
-            return []
-
-    def extract_spacy(
-        self,
-        text: str,
-        max_keywords: int = 20
-    ) -> List[Tuple[str, float]]:
+    def get_article_preview(self, content: str, max_length: int = 500) -> str:
         """
-        Extract keywords using spaCy (entities and noun chunks).
+        Get a preview of the article for display purposes.
 
         Args:
-            text: Text to extract keywords from
-            max_keywords: Maximum number of keywords
+            content: Article content
+            max_length: Maximum preview length
 
         Returns:
-            List of tuples (keyword, score)
+            Preview text
         """
-        if not self.nlp:
-            logger.warning("spaCy model not loaded, skipping spaCy extraction")
-            return []
+        cleaned = self._clean_text(content)
 
-        text = self._clean_text(text)
+        if len(cleaned) <= max_length:
+            return cleaned
 
-        try:
-            doc = self.nlp(text[:1000000])  # Limit text length for performance
+        # Truncate at word boundary
+        truncated = cleaned[:max_length]
+        last_space = truncated.rfind(' ')
 
-            # Extract named entities
-            entities = [ent.text.lower().strip() for ent in doc.ents]
+        if last_space > 0:
+            truncated = truncated[:last_space]
 
-            # Extract noun chunks
-            noun_chunks = [chunk.text.lower().strip() for chunk in doc.noun_chunks]
+        return truncated + '...'
 
-            # Combine and count
-            all_keywords = entities + noun_chunks
-            keyword_counts = Counter(all_keywords)
 
-            # Filter out single characters and too long phrases
-            filtered = {
-                kw: count for kw, count in keyword_counts.items()
-                if len(kw) > 2 and len(kw.split()) <= 4
-            }
+# Backward compatibility - keep the old name but with deprecation warning
+class KeywordExtractor(TopicExtractor):
+    """
+    DEPRECATED: Use TopicExtractor instead.
 
-            # Get most common
-            top_keywords = Counter(filtered).most_common(max_keywords)
+    This class is kept for backward compatibility but just wraps TopicExtractor.
+    """
 
-            # Normalize scores
-            max_count = max([count for _, count in top_keywords]) if top_keywords else 1
-            normalized = [(kw, count / max_count) for kw, count in top_keywords]
+    def __init__(self, language: str = 'multilingual'):
+        logger.warning(
+            "KeywordExtractor is deprecated. Use TopicExtractor instead. "
+            "The system now uses BERTopic for semantic topic modeling."
+        )
+        super().__init__(language=language)
 
-            logger.debug(f"Extracted {len(normalized)} keywords with spaCy")
-            return normalized
-
-        except Exception as e:
-            logger.error(f"Error extracting keywords with spaCy: {e}")
-            return []
-
-    def extract_all(
-        self,
-        text: str,
-        max_keywords: int = 20
-    ) -> List[Tuple[str, float, str]]:
+    def extract_all(self, text: str, max_keywords: int = 20) -> List[Tuple[str, float, str]]:
         """
-        Extract keywords using all methods and combine results.
+        DEPRECATED: Returns empty list.
 
-        Args:
-            text: Text to extract keywords from
-            max_keywords: Maximum number of keywords per method
-
-        Returns:
-            List of tuples (keyword, score, method)
+        Topic extraction now happens in TopicModeler across multiple documents.
+        Use TopicExtractor.extract_text() to prepare text for topic modeling.
         """
-        all_keywords = []
+        logger.warning(
+            "extract_all() is deprecated. Use TopicExtractor.extract_text() "
+            "to prepare text for topic modeling with TopicModeler."
+        )
+        return []
 
-        # YAKE extraction
-        yake_keywords = self.extract_yake(text, max_keywords)
-        for kw, score in yake_keywords:
-            all_keywords.append((kw, score, 'yake'))
-
-        # spaCy extraction
-        spacy_keywords = self.extract_spacy(text, max_keywords)
-        for kw, score in spacy_keywords:
-            all_keywords.append((kw, score, 'spacy'))
-
-        logger.debug(f"Total keywords extracted: {len(all_keywords)}")
-        return all_keywords
-
-    def get_top_keywords(
-        self,
-        keywords: List[Tuple[str, float, str]],
-        top_n: int = 20
-    ) -> List[Tuple[str, float, str]]:
-        """
-        Get top N keywords by aggregating scores across methods.
-
-        Args:
-            keywords: List of tuples (keyword, score, method)
-            top_n: Number of top keywords to return
-
-        Returns:
-            List of top keywords
-        """
-        # Aggregate scores by keyword
-        keyword_scores: Dict[str, List[float]] = {}
-
-        for kw, score, method in keywords:
-            if kw not in keyword_scores:
-                keyword_scores[kw] = []
-            keyword_scores[kw].append(score)
-
-        # Calculate average score
-        avg_scores = {
-            kw: sum(scores) / len(scores)
-            for kw, scores in keyword_scores.items()
-        }
-
-        # Sort by score
-        sorted_keywords = sorted(avg_scores.items(), key=lambda x: x[1], reverse=True)
-
-        # Return top N with their best method
-        result = []
-        for kw, avg_score in sorted_keywords[:top_n]:
-            # Find which method gave this keyword
-            method = next(m for k, s, m in keywords if k == kw)
-            result.append((kw, avg_score, method))
-
-        return result
-
-
-def load_polish_stopwords() -> List[str]:
-    """Load Polish stopwords."""
-    # Common Polish stopwords
-    stopwords = [
-        'i', 'w', 'na', 'z', 'do', 'się', 'nie', 'to', 'o', 'a',
-        'ale', 'jak', 'że', 'po', 'dla', 'by', 'ze', 'od', 'przy',
-        'czy', 'lub', 'oraz', 'za', 'tak', 'też', 'bardzo', 'już',
-        'może', 'można', 'więc', 'bo', 'jest', 'są', 'będzie', 'był',
-        'była', 'było', 'były', 'być', 'ma', 'mają', 'ma'
-    ]
-
-    try:
-        # Try to load from file if exists
-        with open('data/stopwords_pl.txt', 'r', encoding='utf-8') as f:
-            file_stopwords = [line.strip() for line in f if line.strip()]
-            stopwords.extend(file_stopwords)
-    except FileNotFoundError:
-        pass
-
-    return list(set(stopwords))
+    def get_top_keywords(self, keywords: List, top_n: int = 20) -> List:
+        """DEPRECATED: Returns empty list."""
+        logger.warning("get_top_keywords() is deprecated.")
+        return []

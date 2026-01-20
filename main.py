@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Ad Trends Monitor - Main Scheduler
-Periodically scrapes sources and analyzes trends.
+Periodically scrapes sources and analyzes trends using BERTopic.
 """
 
 import schedule
@@ -11,10 +11,14 @@ from datetime import datetime
 from loguru import logger
 import sys
 import yaml
+import os
 
 from src.scrapers.rss_fetcher import RSSFetcher
-from src.processors.keyword_extractor import KeywordExtractor
+from src.processors.keyword_extractor import TopicExtractor
+from src.analyzers.topic_modeler import TopicModeler
 from src.analyzers.trend_detector import TrendDetector
+from src.analyzers.llm_trend_analyzer import enhance_topics_with_llm
+from src.formatters.trend_summarizer import format_trends_for_output
 from src.storage.database import Database, init_db
 from src.config import settings
 
@@ -80,6 +84,97 @@ def initialize_sources():
             logger.error(f"Error adding source {source_data.get('name')}: {e}")
 
 
+def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
+    """
+    Run topic modeling on articles that don't have topics assigned yet.
+
+    Args:
+        db: Database instance
+        topic_modeler: TopicModeler instance
+    """
+    logger.info("Running topic modeling...")
+
+    # Get articles without topic assignment
+    with db.get_session() as session:
+        from src.storage.models import Article
+        articles = (
+            session.query(Article)
+            .filter(Article.topic_id == None)
+            .all()
+        )
+
+    if not articles:
+        logger.info("No articles need topic modeling")
+        return
+
+    logger.info(f"Found {len(articles)} articles without topics")
+
+    # Extract cleaned content
+    text_extractor = TopicExtractor()
+    documents = []
+    article_ids = []
+
+    for article in articles:
+        cleaned = text_extractor.extract_text(article.content)
+        if len(cleaned) >= settings.TOPIC_MIN_DOCUMENT_LENGTH:
+            documents.append(cleaned)
+            article_ids.append(article.id)
+
+    if not documents:
+        logger.warning("No valid documents for topic modeling")
+        return
+
+    logger.info(f"Processing {len(documents)} documents with BERTopic...")
+
+    # Extract topics
+    topic_ids, topic_info = topic_modeler.extract_topics(
+        documents,
+        min_document_length=settings.TOPIC_MIN_DOCUMENT_LENGTH
+    )
+
+    logger.info(f"BERTopic completed: {len(topic_info)} raw topics identified")
+
+    # LLM Enhancement (if enabled)
+    if settings.USE_LLM_ENHANCEMENT and topic_info:
+        logger.info("Enhancing topics with LLM analysis...")
+
+        # Group articles by topic_id
+        articles_by_topic = {}
+        for i, (article_id, topic_id) in enumerate(zip(article_ids, topic_ids)):
+            if topic_id == -1:  # Skip outliers
+                continue
+
+            if topic_id not in articles_by_topic:
+                articles_by_topic[topic_id] = []
+
+            # Get original article from DB
+            with db.get_session() as session:
+                from src.storage.models import Article
+                article = session.query(Article).filter(Article.id == article_id).first()
+                if article:
+                    articles_by_topic[topic_id].append({
+                        'id': article.id,
+                        'title': article.title,
+                        'content': article.content[:500]  # First 500 chars
+                    })
+
+        # Enhance with LLM
+        topic_info = enhance_topics_with_llm(topic_info, articles_by_topic)
+
+        logger.info(f"LLM Enhancement completed: {len(topic_info)} trends identified")
+
+    # Save topics to database
+    if topic_info:
+        db.save_topics(topic_info)
+
+    # Update article topic assignments
+    for i, article_id in enumerate(article_ids):
+        if i < len(topic_ids):
+            db.update_article_topic(article_id, topic_ids[i], documents[i])
+
+    logger.info(f"Topic modeling completed: {len(topic_info)} final topics")
+
+
 def run_scraping_job():
     """Main scraping and analysis job."""
     logger.info("=" * 80)
@@ -88,13 +183,29 @@ def run_scraping_job():
 
     db = Database()
     rss_fetcher = RSSFetcher()
-    keyword_extractor = KeywordExtractor()
+    text_extractor = TopicExtractor()
+
+    # Initialize topic modeler
+    # Check if model exists
+    model_path = settings.TOPIC_MODEL_PATH
+    topic_modeler = TopicModeler(
+        language=settings.TOPIC_MODEL_LANGUAGE,
+        min_topic_size=settings.TOPIC_MIN_TOPIC_SIZE,
+        nr_topics=settings.TOPIC_NR_TOPICS
+    )
+
+    if os.path.exists(model_path):
+        try:
+            topic_modeler.load_model(model_path)
+            logger.info("Loaded existing topic model")
+        except Exception as e:
+            logger.warning(f"Could not load model: {e}, will create new one")
 
     sources = db.get_active_sources()
     logger.info(f"Found {len(sources)} active sources")
 
     total_articles = 0
-    total_keywords = 0
+    new_articles_count = 0
 
     for source in sources:
         try:
@@ -106,11 +217,9 @@ def run_scraping_job():
             if source.source_type == 'rss':
                 articles = rss_fetcher.fetch_feed(source.url)
             elif source.source_type == 'blog':
-                # Blog scraper would go here (not implemented in MVP)
                 logger.warning(f"Blog scraping not yet implemented for: {source.name}")
                 continue
             elif source.source_type == 'sitemap':
-                # Sitemap crawler would go here (not implemented in MVP)
                 logger.warning(f"Sitemap crawling not yet implemented for: {source.name}")
                 continue
             else:
@@ -133,24 +242,9 @@ def run_scraping_job():
                         continue
 
                     total_articles += 1
+                    new_articles_count += 1
 
-                    # Extract keywords
-                    content = article_data.get('content', '')
-                    if content:
-                        keywords = keyword_extractor.extract_all(content)
-
-                        if keywords:
-                            # Get top keywords
-                            top_keywords = keyword_extractor.get_top_keywords(
-                                keywords,
-                                top_n=settings.TOP_KEYWORDS_COUNT
-                            )
-
-                            # Save keywords
-                            db.save_keywords(article_id, top_keywords)
-                            total_keywords += len(top_keywords)
-
-                            logger.debug(f"Extracted {len(top_keywords)} keywords for article {article_id}")
+                    logger.debug(f"Saved article {article_id}: {article_data.get('title', '')[:50]}")
 
                 except Exception as e:
                     logger.error(f"Error processing article {article_data.get('url')}: {e}")
@@ -167,28 +261,47 @@ def run_scraping_job():
             logger.error(f"Error processing source {source.name}: {e}")
             continue
 
-    logger.info(f"Scraping completed: {total_articles} new articles, {total_keywords} keywords extracted")
+    logger.info(f"Scraping completed: {total_articles} total articles ({new_articles_count} new)")
+
+    # Run topic modeling on new articles
+    if new_articles_count > 0:
+        try:
+            run_topic_modeling(db, topic_modeler)
+
+            # Save model if we processed enough new articles
+            if new_articles_count >= settings.TOPIC_REMODEL_THRESHOLD:
+                os.makedirs(os.path.dirname(settings.TOPIC_MODEL_PATH), exist_ok=True)
+                topic_modeler.save_model(settings.TOPIC_MODEL_PATH)
+
+        except Exception as e:
+            logger.error(f"Error in topic modeling: {e}")
 
     # Calculate trends
     try:
         logger.info("Calculating trends...")
         detector = TrendDetector(db)
         trends = detector.calculate_trends(
-            window_days=settings.TREND_WINDOW_DAYS
+            window_days=settings.TREND_WINDOW_DAYS,
+            min_count=settings.TREND_MIN_COUNT,
+            min_growth_rate=settings.TREND_MIN_GROWTH_RATE
         )
 
         # Save trends to database
         db.save_trends(trends)
 
         trending_count = sum(1 for t in trends if t['is_trending'])
-        logger.info(f"Found {trending_count} trending keywords")
+        new_count = sum(1 for t in trends if t.get('is_new', False))
+        logger.info(f"Found {trending_count} trending topics ({new_count} new)")
 
-        # Log top 5 trending
-        top_trending = [t for t in trends if t['is_trending']][:5]
-        if top_trending:
-            logger.info("Top 5 trending keywords:")
-            for trend in top_trending:
-                logger.info(f"  - {trend['keyword']}: {trend['growth_rate']:.1%} growth ({trend['count']} occurrences)")
+        # Display trends
+        if trends:
+            output = format_trends_for_output(
+                trends,
+                output_format=settings.TREND_OUTPUT_FORMAT,
+                max_trends=settings.TREND_MAX_DISPLAY,
+                period_days=settings.TREND_WINDOW_DAYS
+            )
+            print(output)
 
     except Exception as e:
         logger.error(f"Error calculating trends: {e}")
@@ -225,7 +338,7 @@ def run_scheduler():
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="Ad Trends Monitor")
+    parser = argparse.ArgumentParser(description="Ad Trends Monitor with BERTopic")
     parser.add_argument(
         '--once',
         action='store_true',
@@ -241,8 +354,34 @@ def main():
         action='store_true',
         help='Initialize sources from YAML and exit'
     )
+    parser.add_argument(
+        '--remodel',
+        action='store_true',
+        help='Re-run topic modeling on all articles'
+    )
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable DEBUG logging (shows LLM prompts and responses)'
+    )
 
     args = parser.parse_args()
+
+    # Configure DEBUG logging if requested
+    if args.debug:
+        logger.remove()
+        logger.add(
+            sys.stderr,
+            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+            level="DEBUG"
+        )
+        logger.add(
+            "logs/ad_trends_{time:YYYY-MM-DD}.log",
+            rotation="1 day",
+            retention="30 days",
+            level="DEBUG"
+        )
+        logger.debug("DEBUG logging enabled")
 
     # Initialize database if needed
     if args.init_db:
@@ -256,6 +395,32 @@ def main():
         logger.info("Initializing sources...")
         initialize_sources()
         logger.success("Sources initialized")
+        return
+
+    # Remodel all articles
+    if args.remodel:
+        logger.info("Re-running topic modeling on all articles...")
+        db = Database()
+
+        # Reset topic_id for all articles
+        with db.get_session() as session:
+            from src.storage.models import Article
+            session.query(Article).update({Article.topic_id: None})
+            session.commit()
+
+        topic_modeler = TopicModeler(
+            language=settings.TOPIC_MODEL_LANGUAGE,
+            min_topic_size=settings.TOPIC_MIN_TOPIC_SIZE,
+            nr_topics=settings.TOPIC_NR_TOPICS
+        )
+
+        run_topic_modeling(db, topic_modeler)
+
+        # Save new model
+        os.makedirs(os.path.dirname(settings.TOPIC_MODEL_PATH), exist_ok=True)
+        topic_modeler.save_model(settings.TOPIC_MODEL_PATH)
+
+        logger.success("Topic modeling completed")
         return
 
     # Ensure database is initialized

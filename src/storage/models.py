@@ -36,6 +36,8 @@ class Article(Base):
     scraped_date = Column(DateTime, default=datetime.utcnow)
     word_count = Column(Integer, nullable=False, default=0)
     author = Column(String(255), nullable=True)
+    topic_id = Column(Integer, nullable=True, index=True)  # BERTopic topic ID (-1 = outlier)
+    cleaned_content = Column(Text, nullable=True)  # Preprocessed content for topic modeling
 
     source = relationship("Source", back_populates="articles")
     keywords = relationship("Keyword", back_populates="article", cascade="all, delete-orphan")
@@ -70,16 +72,33 @@ class Keyword(Base):
         return f"<Keyword(keyword='{self.keyword}', score={self.score:.3f})>"
 
 
+class Topic(Base):
+    __tablename__ = "topics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    topic_id = Column(Integer, nullable=False, unique=True, index=True)  # BERTopic topic ID
+    topic_name = Column(String(512), nullable=False)
+    top_words = Column(Text, nullable=False)  # JSON array of top words
+    size = Column(Integer, nullable=False, default=0)  # Number of articles
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<Topic(id={self.topic_id}, name='{self.topic_name}', size={self.size})>"
+
+
 class Trend(Base):
     __tablename__ = "trends"
 
     id = Column(Integer, primary_key=True, index=True)
-    keyword = Column(String(255), nullable=False, index=True)
+    topic_id = Column(Integer, nullable=True, index=True)  # Reference to Topic (nullable for backward compat)
+    keyword = Column(String(255), nullable=False, index=True)  # Topic name or legacy keyword
     count = Column(Integer, nullable=False)
     period_start = Column(DateTime, nullable=False, index=True)
     period_end = Column(DateTime, nullable=False, index=True)
     growth_rate = Column(Float, nullable=False)
     is_trending = Column(Boolean, default=False)
+    is_new = Column(Boolean, default=False)  # New topic that didn't exist before
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
