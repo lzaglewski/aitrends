@@ -22,6 +22,8 @@ from src.formatters.trend_summarizer import format_trends_for_output
 from src.storage.database import Database, init_db
 from src.config import settings
 
+# Disable tokenizers parallelism warning (occurs when forking after using transformers)
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
 # Configure logger
 logger.remove()
@@ -63,22 +65,48 @@ def initialize_sources():
         logger.warning("No sources found in YAML file")
         return
 
+    # Load source weights if enabled
+    weight_manager = None
+    if settings.SOURCE_WEIGHTS_ENABLED:
+        from src.utils.source_weights import SourceWeightManager
+        weight_manager = SourceWeightManager(settings.SOURCE_WEIGHTS_CONFIG)
+
     for source_data in sources_data:
         try:
+            url = source_data['url']
+
+            # Check if source is blacklisted
+            if weight_manager and weight_manager.is_blacklisted(url):
+                logger.warning(f"Skipping blacklisted source: {source_data['name']} ({url})")
+                continue
+
+            # Get credibility weight
+            weight = weight_manager.get_weight(url) if weight_manager else 1.0
+
             # Check if source already exists
             with db.get_session() as session:
                 from src.storage.models import Source
-                existing = session.query(Source).filter(Source.url == source_data['url']).first()
+                existing = session.query(Source).filter(Source.url == url).first()
 
                 if not existing:
-                    db.add_source(
+                    # Add new source with weight
+                    source = Source(
                         name=source_data['name'],
-                        url=source_data['url'],
-                        source_type=source_data['type']
+                        url=url,
+                        source_type=source_data['type'],
+                        credibility_weight=weight
                     )
-                    logger.info(f"Added source: {source_data['name']}")
+                    session.add(source)
+                    session.commit()
+                    logger.info(f"Added source: {source_data['name']} (weight: {weight})")
                 else:
-                    logger.debug(f"Source already exists: {source_data['name']}")
+                    # Update weight if changed
+                    if existing.credibility_weight != weight:
+                        existing.credibility_weight = weight
+                        session.commit()
+                        logger.info(f"Updated weight for {source_data['name']}: {weight}")
+                    else:
+                        logger.debug(f"Source already exists: {source_data['name']}")
 
         except Exception as e:
             logger.error(f"Error adding source {source_data.get('name')}: {e}")
@@ -113,23 +141,80 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
     text_extractor = TopicExtractor()
     documents = []
     article_ids = []
+    article_urls = []
+    published_dates = []
+    article_dicts = []
 
     for article in articles:
         cleaned = text_extractor.extract_text(article.content)
         if len(cleaned) >= settings.TOPIC_MIN_DOCUMENT_LENGTH:
             documents.append(cleaned)
             article_ids.append(article.id)
+            article_urls.append(article.url)
+            published_dates.append(article.published_date or article.scraped_date)
+            # Prepare dict for potential deduplication
+            article_dicts.append({
+                'id': article.id,
+                'title': article.title,
+                'content': article.content,
+                'source_id': article.source_id,
+                'url': article.url
+            })
 
     if not documents:
         logger.warning("No valid documents for topic modeling")
         return
 
+    # Fuzzy deduplication (if enabled)
+    if settings.DEDUP_ENABLED and len(documents) > 1:
+        from src.processors.deduplicator import ArticleDeduplicator
+
+        logger.info("Running fuzzy deduplication...")
+        deduplicator = ArticleDeduplicator(settings.DEDUP_SIMILARITY_THRESHOLD)
+
+        # Get source weights (empty for now, will be populated in FAZA 2)
+        source_weights = {}
+
+        # Deduplicate
+        deduplicated_articles, dedup_metrics = deduplicator.deduplicate_batch(
+            article_dicts, source_weights
+        )
+
+        # Update documents and article_ids to match deduplicated articles
+        if dedup_metrics['removed'] > 0:
+            deduplicated_ids = {a['id'] for a in deduplicated_articles}
+            new_documents = []
+            new_article_ids = []
+            new_article_urls = []
+            new_published_dates = []
+
+            for i, article_id in enumerate(article_ids):
+                if article_id in deduplicated_ids:
+                    new_documents.append(documents[i])
+                    new_article_ids.append(article_id)
+                    new_article_urls.append(article_urls[i])
+                    new_published_dates.append(published_dates[i])
+
+            documents = new_documents
+            article_ids = new_article_ids
+            article_urls = new_article_urls
+            published_dates = new_published_dates
+
+            logger.info(
+                f"Deduplication metrics: {dedup_metrics['removed']} duplicates removed "
+                f"({dedup_metrics['rate']*100:.1f}% reduction)"
+            )
+
     logger.info(f"Processing {len(documents)} documents with BERTopic...")
 
-    # Extract topics
+    # Extract topics (with embedding cache and temporal weighting if enabled)
     topic_ids, topic_info = topic_modeler.extract_topics(
         documents,
-        min_document_length=settings.TOPIC_MIN_DOCUMENT_LENGTH
+        article_ids=article_ids,
+        article_urls=article_urls,
+        published_dates=published_dates,
+        min_document_length=settings.TOPIC_MIN_DOCUMENT_LENGTH,
+        use_cache=settings.EMBEDDING_CACHE_ENABLED
     )
 
     logger.info(f"BERTopic completed: {len(topic_info)} raw topics identified")
@@ -166,11 +251,17 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
     # Save topics to database
     if topic_info:
         db.save_topics(topic_info)
+        # Create set of valid topic IDs (those that passed LLM filtering)
+        valid_topic_ids = set(topic_info.keys())
+    else:
+        valid_topic_ids = set()
 
     # Update article topic assignments
     for i, article_id in enumerate(article_ids):
         if i < len(topic_ids):
-            db.update_article_topic(article_id, topic_ids[i], documents[i])
+            # If topic was filtered out by LLM, mark as outlier
+            final_topic_id = topic_ids[i] if topic_ids[i] in valid_topic_ids else -1
+            db.update_article_topic(article_id, final_topic_id, documents[i])
 
     logger.info(f"Topic modeling completed: {len(topic_info)} final topics")
 
@@ -191,7 +282,10 @@ def run_scraping_job():
     topic_modeler = TopicModeler(
         language=settings.TOPIC_MODEL_LANGUAGE,
         min_topic_size=settings.TOPIC_MIN_TOPIC_SIZE,
-        nr_topics=settings.TOPIC_NR_TOPICS
+        min_samples=settings.TOPIC_MIN_SAMPLES,
+        nr_topics=settings.TOPIC_NR_TOPICS,
+        use_temporal_weighting=settings.USE_TEMPORAL_WEIGHTING,
+        temporal_lambda=settings.TEMPORAL_LAMBDA_DECAY
     )
 
     if os.path.exists(model_path):
@@ -227,6 +321,22 @@ def run_scraping_job():
                 continue
 
             logger.info(f"Fetched {len(articles)} articles from {source.name}")
+
+            # Fetch full content (if enabled)
+            if settings.FULL_CONTENT_ENABLED and articles:
+                from src.scrapers.content_scraper import FullContentScraper
+
+                content_scraper = FullContentScraper(
+                    timeout=settings.FULL_CONTENT_TIMEOUT,
+                    rate_limit_delay=settings.FULL_CONTENT_RATE_LIMIT,
+                    user_agent=settings.USER_AGENT
+                )
+
+                articles = content_scraper.batch_fetch(
+                    articles,
+                    max_workers=settings.FULL_CONTENT_MAX_WORKERS,
+                    min_rss_length=settings.FULL_CONTENT_MIN_RSS_LENGTH
+                )
 
             # Process each article
             for article_data in articles:
@@ -276,18 +386,185 @@ def run_scraping_job():
         except Exception as e:
             logger.error(f"Error in topic modeling: {e}")
 
+    # Topic merging (if enabled)
+    if settings.USE_TOPIC_MERGING:
+        try:
+            logger.info("Running topic merging...")
+            from src.analyzers.topic_merger import TopicMerger
+            from src.analyzers.llm_trend_analyzer import LLMTrendAnalyzer
+
+            # Get all topics
+            all_topics = db.get_all_topics()
+
+            if len(all_topics) >= 2:
+                # Compute centroids for all topics
+                centroids = {}
+                for topic in all_topics:
+                    # Safely convert size to int (handle bytes from DB)
+                    topic_size = int(topic.size) if topic.size and not isinstance(topic.size, bytes) else (
+                        int.from_bytes(topic.size, 'big') if isinstance(topic.size, bytes) and topic.size else 0
+                    )
+                    if topic_size > 0:  # Skip empty topics
+                        article_ids = db.get_article_ids_by_topic(topic.topic_id, limit=100)
+                        if article_ids:
+                            centroid = topic_modeler.compute_topic_centroid(
+                                topic.topic_id, article_ids, db
+                            )
+                            if centroid is not None:
+                                centroids[topic.topic_id] = centroid
+
+                if len(centroids) >= 2:
+                    # Initialize merger
+                    llm_analyzer = LLMTrendAnalyzer() if settings.TOPIC_MERGE_USE_LLM else None
+                    merger = TopicMerger(
+                        db,
+                        llm_analyzer=llm_analyzer,
+                        similarity_threshold=settings.TOPIC_MERGE_SIMILARITY
+                    )
+
+                    # Auto-merge topics
+                    merge_actions = merger.auto_merge_topics(
+                        centroids,
+                        use_llm=settings.TOPIC_MERGE_USE_LLM,
+                        dry_run=False
+                    )
+
+                    if merge_actions:
+                        logger.info(f"Merged {len(merge_actions)} topic pairs")
+                    else:
+                        logger.info("No topics needed merging")
+                else:
+                    logger.info("Not enough topics with centroids for merging")
+            else:
+                logger.info("Not enough topics for merging")
+
+        except Exception as e:
+            logger.error(f"Error in topic merging: {e}")
+
     # Calculate trends
     try:
         logger.info("Calculating trends...")
         detector = TrendDetector(db)
-        trends = detector.calculate_trends(
-            window_days=settings.TREND_WINDOW_DAYS,
-            min_count=settings.TREND_MIN_COUNT,
-            min_growth_rate=settings.TREND_MIN_GROWTH_RATE
-        )
+
+        # Use multi-period analysis if enabled, otherwise use standard analysis
+        if settings.USE_MULTIPERIOD_ANALYSIS:
+            trends = detector.calculate_trends_multiperiod(
+                period_weeks=settings.MULTIPERIOD_WEEKS,
+                num_periods=settings.MULTIPERIOD_COUNT,
+                min_count=settings.TREND_MIN_COUNT,
+                min_growth_rate=settings.TREND_MIN_GROWTH_RATE
+            )
+        else:
+            trends = detector.calculate_trends(
+                window_days=settings.TREND_WINDOW_DAYS,
+                min_count=settings.TREND_MIN_COUNT,
+                min_growth_rate=settings.TREND_MIN_GROWTH_RATE
+            )
 
         # Save trends to database
         db.save_trends(trends)
+
+        # Save trend snapshots for historical tracking
+        logger.info("Saving trend snapshots...")
+        centroids = {}  # Store for correlation analysis
+        for trend in trends:
+            try:
+                topic_id = trend['topic_id']
+
+                # Get article IDs for this topic in the current period
+                article_ids = db.get_article_ids_by_topic(
+                    topic_id,
+                    start_date=trend['period_start'],
+                    end_date=trend['period_end'],
+                    limit=100
+                )
+
+                # Compute topic centroid
+                centroid = None
+                if article_ids:
+                    centroid = topic_modeler.compute_topic_centroid(
+                        topic_id, article_ids, db
+                    )
+                    if centroid is not None:
+                        centroids[topic_id] = centroid
+
+                # Save snapshot
+                db.save_trend_snapshot(topic_id, trend, centroid)
+
+            except Exception as e:
+                logger.warning(f"Failed to save snapshot for topic {topic_id}: {e}")
+
+        # Cross-topic correlation analysis (if enabled)
+        if settings.USE_CORRELATION_ANALYSIS and len(trends) >= 2:
+            try:
+                logger.info("Analyzing cross-topic correlations...")
+                from src.analyzers.correlation_analyzer import CrossTopicCorrelationAnalyzer
+
+                corr_analyzer = CrossTopicCorrelationAnalyzer(db)
+
+                # Get trending topic IDs
+                trending_ids = [t['topic_id'] for t in trends if t.get('is_trending', False)]
+
+                if len(trending_ids) >= 2:
+                    # Calculate correlations
+                    correlations = corr_analyzer.calculate_correlations(
+                        trending_ids,
+                        trends[0]['period_start'],
+                        trends[0]['period_end'],
+                        centroids,
+                        min_correlation=settings.CORRELATION_MIN_THRESHOLD
+                    )
+
+                    if correlations:
+                        # Build correlation graph
+                        correlation_graph = corr_analyzer.build_correlation_graph(
+                            correlations, top_n_per_topic=5
+                        )
+
+                        # Add related_trends to each trend
+                        for trend in trends:
+                            if trend['topic_id'] in correlation_graph:
+                                trend['related_trends'] = correlation_graph[trend['topic_id']]
+
+                        logger.info(f"Added correlation data to {len(correlation_graph)} topics")
+                    else:
+                        logger.info("No significant correlations found")
+                else:
+                    logger.info("Not enough trending topics for correlation analysis")
+
+            except Exception as e:
+                logger.error(f"Error in correlation analysis: {e}")
+
+        # Semantic drift detection (if enabled)
+        if settings.USE_DRIFT_DETECTION and centroids:
+            try:
+                logger.info("Detecting semantic drift...")
+                from src.analyzers.drift_detector import SemanticDriftDetector
+
+                drift_detector = SemanticDriftDetector(
+                    db,
+                    llm_analyzer=LLMTrendAnalyzer() if settings.USE_LLM_ENHANCEMENT else None,
+                    drift_threshold=settings.DRIFT_THRESHOLD
+                )
+
+                # Detect drift for all topics with centroids
+                drift_results = drift_detector.batch_detect_drift(
+                    centroids,
+                    lookback_days=settings.DRIFT_LOOKBACK_DAYS
+                )
+
+                if drift_results:
+                    # Add drift info to trends
+                    for trend in trends:
+                        if trend['topic_id'] in drift_results:
+                            trend['semantic_drift'] = drift_results[trend['topic_id']]
+
+                    logger.info(f"Detected semantic drift in {len(drift_results)} topics")
+                else:
+                    logger.info("No significant semantic drift detected")
+
+            except Exception as e:
+                logger.error(f"Error in drift detection: {e}")
 
         trending_count = sum(1 for t in trends if t['is_trending'])
         new_count = sum(1 for t in trends if t.get('is_new', False))

@@ -9,6 +9,7 @@ from umap import UMAP
 from hdbscan import HDBSCAN
 from sklearn.feature_extraction.text import CountVectorizer
 from loguru import logger
+from datetime import datetime
 import re
 
 from .semantic_clustering import NamedEntityFilter
@@ -26,7 +27,10 @@ class TopicModeler:
         self,
         language: str = 'multilingual',
         min_topic_size: int = 3,
-        nr_topics: Optional[int] = None
+        min_samples: Optional[int] = None,
+        nr_topics: Optional[int] = None,
+        use_temporal_weighting: bool = False,
+        temporal_lambda: float = 0.05
     ):
         """
         Initialize the topic modeler.
@@ -34,11 +38,17 @@ class TopicModeler:
         Args:
             language: Language for the model ('multilingual', 'en', 'pl')
             min_topic_size: Minimum number of documents per topic
+            min_samples: Minimum samples for HDBSCAN core points (None = use min_topic_size)
             nr_topics: Number of topics to extract (None = auto)
+            use_temporal_weighting: Whether to apply temporal weighting to embeddings
+            temporal_lambda: Decay rate for temporal weighting (default: 0.05, ~14 day half-life)
         """
         self.language = language
         self.min_topic_size = min_topic_size
+        self.min_samples = min_samples if min_samples is not None else min_topic_size
         self.nr_topics = nr_topics
+        self.use_temporal_weighting = use_temporal_weighting
+        self.temporal_lambda = temporal_lambda
         self.model = None
         self.entity_filter = NamedEntityFilter()
         self._initialize_model()
@@ -70,6 +80,7 @@ class TopicModeler:
         # HDBSCAN for clustering
         hdbscan_model = HDBSCAN(
             min_cluster_size=self.min_topic_size,
+            min_samples=self.min_samples,
             metric='euclidean',
             cluster_selection_method='eom',
             prediction_data=True
@@ -149,14 +160,22 @@ class TopicModeler:
     def extract_topics(
         self,
         documents: List[str],
-        min_document_length: int = 50
+        article_ids: Optional[List[int]] = None,
+        article_urls: Optional[List[str]] = None,
+        published_dates: Optional[List[datetime]] = None,
+        min_document_length: int = 50,
+        use_cache: bool = True
     ) -> Tuple[List[int], Dict[int, Dict]]:
         """
         Extract topics from a list of documents.
 
         Args:
             documents: List of document texts
+            article_ids: Optional list of article IDs for caching
+            article_urls: Optional list of article URLs for caching
+            published_dates: Optional list of publication dates for temporal weighting
             min_document_length: Minimum character length for documents
+            use_cache: Whether to use embedding cache (requires article_ids and article_urls)
 
         Returns:
             Tuple of (topic_ids, topic_info)
@@ -188,8 +207,51 @@ class TopicModeler:
         logger.info(f"Extracting topics from {len(valid_docs)} documents...")
 
         try:
+            # Generate or retrieve embeddings (with cache if enabled)
+            embeddings = None
+            if use_cache and article_ids and article_urls:
+                from ..config import settings
+                if settings.EMBEDDING_CACHE_ENABLED:
+                    from ..storage.embedding_cache import EmbeddingCacheManager
+                    from ..storage.database import Database
+
+                    # Filter article_ids and article_urls to match valid_indices
+                    valid_article_ids = [article_ids[i] for i in valid_indices]
+                    valid_article_urls = [article_urls[i] for i in valid_indices]
+
+                    db = Database()
+                    cache_manager = EmbeddingCacheManager(
+                        db, ttl_days=settings.EMBEDDING_CACHE_TTL_DAYS
+                    )
+
+                    # Get embeddings with cache
+                    embeddings = cache_manager.get_embeddings_with_cache(
+                        valid_docs,
+                        valid_article_ids,
+                        valid_article_urls,
+                        embedding_function=lambda docs: self.model.embedding_model.embed(docs)
+                    )
+
+                    logger.info("Using cached embeddings for topic modeling")
+
+            # Apply temporal weighting if enabled
+            if self.use_temporal_weighting and published_dates and embeddings is not None:
+                from .temporal_weighting import TemporalWeightCalculator
+
+                # Filter published_dates to match valid_indices
+                valid_dates = [published_dates[i] for i in valid_indices]
+
+                weighter = TemporalWeightCalculator(lambda_decay=self.temporal_lambda)
+                embeddings = weighter.apply_weights_to_embeddings(embeddings, valid_dates)
+
+                logger.info(f"Applied temporal weighting (λ={self.temporal_lambda}, "
+                           f"half-life={weighter.get_half_life_days():.1f} days)")
+
             # Fit model and predict topics
-            topics, _ = self.model.fit_transform(valid_docs)
+            if embeddings is not None:
+                topics, _ = self.model.fit_transform(valid_docs, embeddings=embeddings)
+            else:
+                topics, _ = self.model.fit_transform(valid_docs)
 
             # Get topic information
             topic_info = self._get_topic_info()
@@ -318,7 +380,13 @@ class TopicModeler:
                 continue
 
             try:
-                date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                # Handle both string and datetime objects
+                if isinstance(date_str, datetime):
+                    date = date_str
+                elif isinstance(date_str, str):
+                    date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                else:
+                    continue
             except:
                 continue
 
@@ -376,3 +444,54 @@ class TopicModeler:
         """Load a trained model from disk."""
         self.model = BERTopic.load(path)
         logger.info(f"Model loaded from {path}")
+
+    def compute_topic_centroid(
+        self,
+        topic_id: int,
+        article_ids: List[int],
+        db
+    ) -> Optional['np.ndarray']:
+        """
+        Compute the centroid (mean embedding) for a topic.
+
+        Args:
+            topic_id: Topic ID
+            article_ids: List of article IDs in this topic
+            db: Database instance
+
+        Returns:
+            Numpy array of centroid embedding or None
+        """
+        if not article_ids or not self.model:
+            return None
+
+        try:
+            # Get article contents
+            documents = []
+            with db.get_session() as session:
+                from ..storage.models import Article
+                for article_id in article_ids[:100]:  # Limit to 100 for performance
+                    article = session.query(Article).filter(Article.id == article_id).first()
+                    if article and article.cleaned_content:
+                        documents.append(article.cleaned_content)
+                    elif article and article.content:
+                        documents.append(self._preprocess_text(article.content))
+
+            if not documents:
+                return None
+
+            # Compute embeddings
+            # Note: BERTopic's embedding_model is a backend, use embed() method
+            embeddings = self.model.embedding_model.embed(documents)
+
+            # Calculate centroid (mean)
+            import numpy as np
+            centroid = np.mean(embeddings, axis=0)
+
+            logger.debug(f"Computed centroid for topic {topic_id} from {len(documents)} articles")
+
+            return centroid
+
+        except Exception as e:
+            logger.error(f"Error computing centroid for topic {topic_id}: {e}")
+            return None

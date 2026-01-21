@@ -17,23 +17,11 @@ sources:
     url: "https://marketingprzykawie.pl/feed/"
     type: rss
 
-  - name: "NowyMarketing"
-    url: "https://nowymarketing.pl/feed"
-    type: rss
-
   - name: "Brief.pl"
     url: "https://brief.pl/feed/"
     type: rss
 
   # Międzynarodowe źródła (RSS)
-  - name: "AdAge"
-    url: "https://adage.com/feed"
-    type: rss
-
-  - name: "Marketing Week"
-    url: "https://www.marketingweek.com/feed/"
-    type: rss
-
   - name: "Adweek"
     url: "https://www.adweek.com/feed/"
     type: rss
@@ -48,10 +36,6 @@ sources:
     type: rss
 
   # Content Marketing
-  - name: "Content Marketing Institute"
-    url: "https://contentmarketinginstitute.com/feed/"
-    type: rss
-
   - name: "Copyblogger"
     url: "https://copyblogger.com/feed/"
     type: rss
