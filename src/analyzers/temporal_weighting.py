@@ -121,7 +121,7 @@ class TemporalWeightCalculator:
 
         # Log statistics
         logger.info(
-            f"Applied temporal weighting: "
+            f"⏰ Applied temporal weighting: "
             f"mean weight = {weights.mean():.3f}, "
             f"min = {weights.min():.3f}, "
             f"max = {weights.max():.3f}"

@@ -1,15 +1,8 @@
 sources:
   # Polskie agencje reklamowe
-  - name: "Publicis Groupe Polska"
-    url: "https://www.publicisgroupe.pl/blog"
-    type: blog
 
   - name: "VMLY&R Poland"
     url: "https://www.vmlyr.com/pl/insights"
-    type: blog
-
-  - name: "Saatchi & Saatchi"
-    url: "https://saatchi.pl/blog"
     type: blog
 
   # Branżowe portale (RSS)

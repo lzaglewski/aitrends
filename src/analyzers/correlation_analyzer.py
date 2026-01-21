@@ -60,7 +60,7 @@ class CrossTopicCorrelationAnalyzer:
             logger.warning("Need at least 2 topics for correlation analysis")
             return {}
 
-        logger.info(f"Analyzing correlations for {len(topic_ids)} topics...")
+        logger.info(f"🔗 Analyzing correlations for {len(topic_ids)} topics...")
 
         correlations = {}
 
@@ -101,7 +101,7 @@ class CrossTopicCorrelationAnalyzer:
                         'combined_score': combined
                     }
 
-        logger.info(f"Found {len(correlations)} correlated topic pairs")
+        logger.info(f"✅ Found {len(correlations)} correlated topic pairs")
 
         return correlations
 

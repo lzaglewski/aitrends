@@ -97,7 +97,7 @@ class SemanticDriftDetector:
 
         # Drift detected - describe it
         logger.info(
-            f"Semantic drift detected for topic {topic_id}: "
+            f"🔄 Semantic drift detected for topic {topic_id}: "
             f"drift_score={drift_score:.3f}"
         )
 
@@ -326,6 +326,6 @@ Respond ONLY with valid JSON (no markdown, no code blocks):
             except Exception as e:
                 logger.warning(f"Failed to detect drift for topic {topic_id}: {e}")
 
-        logger.info(f"Detected drift in {len(drift_results)} out of {len(topics_with_centroids)} topics")
+        logger.info(f"🔄 Detected drift in {len(drift_results)} out of {len(topics_with_centroids)} topics")
 
         return drift_results

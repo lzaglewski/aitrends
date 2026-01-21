@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     # Topic Modeling (BERTopic) settings
     TOPIC_MODEL_LANGUAGE: str = "multilingual"  # 'multilingual', 'en', 'pl'
-    TOPIC_MIN_TOPIC_SIZE: int = 10  # Minimum articles per topic (increased to reduce noise)
+    TOPIC_MIN_TOPIC_SIZE: int = 8  # Minimum articles per topic (increased to reduce noise)
     TOPIC_MIN_SAMPLES: int = 3  # Minimum samples for HDBSCAN core points
     TOPIC_NR_TOPICS: int | None = None  # Auto-detect number of topics
     TOPIC_MIN_DOCUMENT_LENGTH: int = 50  # Minimum characters for topic modeling
@@ -65,7 +65,7 @@ class Settings(BaseSettings):
 
     # Topic Merging settings
     USE_TOPIC_MERGING: bool = True  # Enable automatic topic merging
-    TOPIC_MERGE_SIMILARITY: float = 0.85  # Minimum similarity for merge candidates
+    TOPIC_MERGE_SIMILARITY: float = 0.75  # Minimum similarity for merge candidates
     TOPIC_MERGE_USE_LLM: bool = True  # Use LLM to validate merge decisions
 
     # Cross-topic Correlation settings

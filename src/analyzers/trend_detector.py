@@ -167,7 +167,7 @@ class TrendDetector:
             use_weighted_counts = settings.SOURCE_WEIGHTS_ENABLED
 
         logger.info(
-            f"Calculating multi-period trends: {num_periods} periods of {period_weeks} weeks "
+            f"📈 Calculating multi-period trends: {num_periods} periods of {period_weeks} weeks "
             f"(weighted: {use_weighted_counts})"
         )
 
@@ -267,7 +267,7 @@ class TrendDetector:
         trends.sort(key=lambda x: x['growth_rate'], reverse=True)
 
         # Log summary
-        logger.info(f"Analyzed {len(trends)} topics across {num_periods} periods")
+        logger.info(f"✅ Analyzed {len(trends)} topics across {num_periods} periods")
         stage_counts = {}
         for trend in trends:
             stage = trend['stage']
@@ -277,7 +277,7 @@ class TrendDetector:
             logger.info(f"  {stage}: {count} topics")
 
         trending_count = sum(1 for t in trends if t['is_trending'])
-        logger.info(f"Marked {trending_count} as trending (growth >= {min_growth_rate:.0%})")
+        logger.info(f"🔥 Marked {trending_count} as trending (growth >= {min_growth_rate:.0%})")
 
         return trends
 

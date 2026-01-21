@@ -181,7 +181,7 @@ class ArticleDeduplicator:
             return [], {'before': 0, 'after': 0, 'removed': 0, 'rate': 0.0}
 
         original_count = len(articles)
-        logger.info(f"Deduplicating {original_count} articles...")
+        logger.info(f"🔍 Deduplicating {original_count} articles...")
 
         # Find duplicate groups
         duplicate_groups = self.find_duplicates(articles)
@@ -215,7 +215,7 @@ class ArticleDeduplicator:
         }
 
         logger.info(
-            f"Deduplication complete: {removed_count} duplicates removed "
+            f"✅ Deduplication complete: {removed_count} duplicates removed "
             f"({rate*100:.1f}% reduction)"
         )
 

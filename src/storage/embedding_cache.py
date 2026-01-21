@@ -162,13 +162,13 @@ class EmbeddingCacheManager:
         cache_hit_rate = cache_hits / len(documents) if len(documents) > 0 else 0.0
 
         logger.info(
-            f"Embedding cache: {cache_hits}/{len(documents)} hits "
+            f"💾 Embedding cache: {cache_hits}/{len(documents)} hits "
             f"({cache_hit_rate*100:.1f}% hit rate)"
         )
 
         # Compute missing embeddings
         if docs_to_compute:
-            logger.info(f"Computing {len(docs_to_compute)} new embeddings...")
+            logger.info(f"🧮 Computing {len(docs_to_compute)} new embeddings...")
             new_embeddings = embedding_function(docs_to_compute)
 
             # Store in embeddings list

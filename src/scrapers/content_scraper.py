@@ -213,7 +213,7 @@ class FullContentScraper:
         if not articles:
             return []
 
-        logger.info(f"Fetching full content for {len(articles)} articles...")
+        logger.info(f"🌐 Fetching full content for {len(articles)} articles...")
 
         # Track statistics
         stats = {
@@ -265,7 +265,7 @@ class FullContentScraper:
                     updated_articles.append(article)  # Keep original
 
         logger.info(
-            f"Full content scraping complete: "
+            f"✅ Full content scraping complete: "
             f"{stats['full_scraped']} scraped, "
             f"{stats['rss_used']} RSS used, "
             f"{stats['errors']} errors"

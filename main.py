@@ -89,7 +89,7 @@ def load_sources_from_yaml(yaml_path: str = "data/sources.yaml"):
 
 def initialize_sources():
     """Initialize sources from YAML into database."""
-    logger.info("Initializing sources from YAML")
+    logger.info("🔄 Initializing sources from YAML")
 
     db = Database()
     sources_data = load_sources_from_yaml()
@@ -104,13 +104,18 @@ def initialize_sources():
         from src.utils.source_weights import SourceWeightManager
         weight_manager = SourceWeightManager(settings.SOURCE_WEIGHTS_CONFIG)
 
+        # Log weight summary
+        weighted_sources = sum(1 for s in sources_data if not weight_manager.is_blacklisted(s['url']))
+        blacklisted = len(sources_data) - weighted_sources
+        logger.info(f"📊 Loaded source weights: {weighted_sources} weighted sources, {blacklisted} blacklisted")
+
     for source_data in sources_data:
         try:
             url = source_data['url']
 
             # Check if source is blacklisted
             if weight_manager and weight_manager.is_blacklisted(url):
-                logger.warning(f"Skipping blacklisted source: {source_data['name']} ({url})")
+                logger.warning(f"🚫 Skipping blacklisted source: {source_data['name']} ({url})")
                 continue
 
             # Get credibility weight
@@ -131,7 +136,7 @@ def initialize_sources():
                     )
                     session.add(source)
                     session.commit()
-                    logger.info(f"Added source: {source_data['name']} (weight: {weight})")
+                    logger.info(f"➕ Added source: {source_data['name']} (weight: {weight})")
                 else:
                     # Update weight if changed
                     if existing.credibility_weight != weight:
@@ -365,7 +370,7 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
 def run_scraping_job():
     """Main scraping and analysis job."""
     logger.info("=" * 80)
-    logger.info(f"Starting scraping job at {datetime.now()}")
+    logger.info(f"🚀 Starting scraping job at {datetime.now()}")
     logger.info("=" * 80)
 
     db = Database()
@@ -387,19 +392,19 @@ def run_scraping_job():
     if os.path.exists(model_path):
         try:
             topic_modeler.load_model(model_path)
-            logger.info("Loaded existing topic model")
+            logger.info("✅ Loaded existing topic model")
         except Exception as e:
-            logger.warning(f"Could not load model: {e}, will create new one")
+            logger.warning(f"⚠️  Could not load model: {e}, will create new one")
 
     sources = db.get_active_sources()
-    logger.info(f"Found {len(sources)} active sources")
+    logger.info(f"📡 Found {len(sources)} active sources")
 
     total_articles = 0
     new_articles_count = 0
 
     for source in sources:
         try:
-            logger.info(f"Processing source: {source.name} ({source.source_type})")
+            logger.info(f"🔄 Processing source: {source.name} ({source.source_type})")
 
             articles = []
 
@@ -416,7 +421,7 @@ def run_scraping_job():
                 logger.warning(f"Unknown source type: {source.source_type}")
                 continue
 
-            logger.info(f"Fetched {len(articles)} articles from {source.name}")
+            logger.info(f"✅ Fetched {len(articles)} articles from {source.name}")
 
             # Fetch full content (if enabled)
             if settings.FULL_CONTENT_ENABLED and articles:
@@ -450,7 +455,7 @@ def run_scraping_job():
                     total_articles += 1
                     new_articles_count += 1
 
-                    logger.debug(f"Saved article {article_id}: {article_data.get('title', '')[:50]}")
+                    logger.info(f"💾 Saved article: {article_data.get('title', '')[:50]}... (ID: {article_id})")
 
                 except Exception as e:
                     logger.error(f"Error processing article {article_data.get('url')}: {e}")
@@ -467,7 +472,7 @@ def run_scraping_job():
             logger.error(f"Error processing source {source.name}: {e}")
             continue
 
-    logger.info(f"Scraping completed: {total_articles} total articles ({new_articles_count} new)")
+    logger.info(f"✨ Scraping completed: {total_articles} total articles ({new_articles_count} new)")
 
     # Run topic modeling on new articles
     if new_articles_count > 0:
@@ -485,7 +490,7 @@ def run_scraping_job():
     # Topic merging (if enabled)
     if settings.USE_TOPIC_MERGING:
         try:
-            logger.info("Running topic merging...")
+            logger.info("🔀 Running topic merging...")
             from src.analyzers.topic_merger import TopicMerger
             from src.analyzers.llm_trend_analyzer import LLMTrendAnalyzer
 
@@ -526,9 +531,9 @@ def run_scraping_job():
                     )
 
                     if merge_actions:
-                        logger.info(f"Merged {len(merge_actions)} topic pairs")
+                        logger.info(f"✅ Merged {len(merge_actions)} topic pairs")
                     else:
-                        logger.info("No topics needed merging")
+                        logger.info("✅ No topics needed merging")
                 else:
                     logger.info("Not enough topics with centroids for merging")
             else:
@@ -539,7 +544,7 @@ def run_scraping_job():
 
     # Calculate trends
     try:
-        logger.info("Calculating trends...")
+        logger.info("📊 Calculating trends...")
         detector = TrendDetector(db)
 
         # Use multi-period analysis if enabled, otherwise use standard analysis
@@ -561,7 +566,7 @@ def run_scraping_job():
         db.save_trends(trends)
 
         # Save trend snapshots for historical tracking
-        logger.info("Saving trend snapshots...")
+        logger.info("💾 Saving trend snapshots...")
         centroids = {}  # Store for correlation analysis
         for trend in trends:
             try:
@@ -593,7 +598,7 @@ def run_scraping_job():
         # Cross-topic correlation analysis (if enabled)
         if settings.USE_CORRELATION_ANALYSIS and len(trends) >= 2:
             try:
-                logger.info("Analyzing cross-topic correlations...")
+                logger.info("🔗 Analyzing cross-topic correlations...")
                 from src.analyzers.correlation_analyzer import CrossTopicCorrelationAnalyzer
 
                 corr_analyzer = CrossTopicCorrelationAnalyzer(db)
@@ -622,11 +627,11 @@ def run_scraping_job():
                             if trend['topic_id'] in correlation_graph:
                                 trend['related_trends'] = correlation_graph[trend['topic_id']]
 
-                        logger.info(f"Added correlation data to {len(correlation_graph)} topics")
+                        logger.info(f"✅ Added correlation data to {len(correlation_graph)} topics")
                     else:
-                        logger.info("No significant correlations found")
+                        logger.info("ℹ️  No significant correlations found")
                 else:
-                    logger.info("Not enough trending topics for correlation analysis")
+                    logger.info("ℹ️  Not enough trending topics for correlation analysis")
 
             except Exception as e:
                 logger.error(f"Error in correlation analysis: {e}")
@@ -634,7 +639,7 @@ def run_scraping_job():
         # Semantic drift detection (if enabled)
         if settings.USE_DRIFT_DETECTION and centroids:
             try:
-                logger.info("Detecting semantic drift...")
+                logger.info("🔄 Detecting semantic drift...")
                 from src.analyzers.drift_detector import SemanticDriftDetector
 
                 drift_detector = SemanticDriftDetector(
@@ -655,16 +660,16 @@ def run_scraping_job():
                         if trend['topic_id'] in drift_results:
                             trend['semantic_drift'] = drift_results[trend['topic_id']]
 
-                    logger.info(f"Detected semantic drift in {len(drift_results)} topics")
+                    logger.info(f"✅ Detected semantic drift in {len(drift_results)} topics")
                 else:
-                    logger.info("No significant semantic drift detected")
+                    logger.info("✅ No significant semantic drift detected")
 
             except Exception as e:
                 logger.error(f"Error in drift detection: {e}")
 
         trending_count = sum(1 for t in trends if t['is_trending'])
         new_count = sum(1 for t in trends if t.get('is_new', False))
-        logger.info(f"Found {trending_count} trending topics ({new_count} new)")
+        logger.info(f"🔥 Found {trending_count} trending topics ({new_count} new)")
 
         # Display trends
         if trends:
@@ -686,15 +691,15 @@ def run_scraping_job():
 
 def run_once():
     """Run scraping job once and exit."""
-    logger.info("Running in single-run mode")
+    logger.info("▶️  Running in single-run mode")
     run_scraping_job()
-    logger.info("Single run completed, exiting")
+    logger.info("✅ Single run completed, exiting")
 
 
 def run_scheduler():
     """Run continuous scheduler."""
-    logger.info("Starting scheduler mode")
-    logger.info(f"Scraping interval: {settings.SCRAPE_INTERVAL_HOURS} hours")
+    logger.info("⏰ Starting scheduler mode")
+    logger.info(f"⏱️  Scraping interval: {settings.SCRAPE_INTERVAL_HOURS} hours")
 
     # Run immediately on start
     run_scraping_job()
@@ -702,7 +707,7 @@ def run_scheduler():
     # Schedule periodic runs
     schedule.every(settings.SCRAPE_INTERVAL_HOURS).hours.do(run_scraping_job)
 
-    logger.info("Scheduler started, waiting for next run...")
+    logger.info("✅ Scheduler started, waiting for next run...")
 
     while True:
         schedule.run_pending()
@@ -758,21 +763,21 @@ def main():
 
     # Initialize database if needed
     if args.init_db:
-        logger.info("Initializing database...")
+        logger.info("🔧 Initializing database...")
         init_db()
-        logger.success("Database initialized")
+        logger.success("✅ Database initialized")
         return
 
     # Initialize sources if needed
     if args.init_sources:
-        logger.info("Initializing sources...")
+        logger.info("🔧 Initializing sources...")
         initialize_sources()
-        logger.success("Sources initialized")
+        logger.success("✅ Sources initialized")
         return
 
     # Remodel all articles
     if args.remodel:
-        logger.info("Re-running topic modeling on all articles...")
+        logger.info("🔄 Re-running topic modeling on all articles...")
         db = Database()
 
         # Reset topic_id for all articles
@@ -793,7 +798,7 @@ def main():
         os.makedirs(os.path.dirname(settings.TOPIC_MODEL_PATH), exist_ok=True)
         topic_modeler.save_model(settings.TOPIC_MODEL_PATH)
 
-        logger.success("Topic modeling completed")
+        logger.success("✅ Topic modeling completed")
         return
 
     # Ensure database is initialized

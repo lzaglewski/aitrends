@@ -26,7 +26,7 @@ class RSSFetcher:
         Returns:
             List of article dictionaries
         """
-        logger.info(f"Fetching RSS feed: {feed_url}")
+        logger.info(f"📡 Fetching RSS feed: {feed_url}")
 
         try:
             # Add custom headers if possible
@@ -52,7 +52,7 @@ class RSSFetcher:
                 if article:
                     articles.append(article)
 
-            logger.info(f"Fetched {len(articles)} articles from {feed_url}")
+            logger.info(f"✅ Fetched {len(articles)} articles from {feed_url}")
             return articles
 
         except requests.RequestException as e:

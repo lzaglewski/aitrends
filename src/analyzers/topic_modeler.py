@@ -55,7 +55,7 @@ class TopicModeler:
 
     def _initialize_model(self):
         """Initialize BERTopic model with custom components."""
-        logger.info(f"Initializing BERTopic model (language: {self.language})")
+        logger.info(f"🧠 Initializing BERTopic model (language: {self.language})")
 
         # Select embedding model based on language
         if self.language == 'multilingual':
@@ -485,12 +485,12 @@ class TopicModeler:
         """Save the trained model to disk."""
         if self.model:
             self.model.save(path)
-            logger.info(f"Model saved to {path}")
+            logger.info(f"💾 Model saved to {path}")
 
     def load_model(self, path: str):
         """Load a trained model from disk."""
         self.model = BERTopic.load(path)
-        logger.info(f"Model loaded from {path}")
+        logger.info(f"📂 Model loaded from {path}")
 
     def compute_topic_centroid(
         self,

@@ -26,7 +26,7 @@ class Database:
     def init_db(self):
         """Initialize database tables."""
         Base.metadata.create_all(bind=self.engine)
-        logger.info("Database initialized successfully")
+        logger.info("✅ Database initialized successfully")
 
     # Source operations
     def get_active_sources(self) -> List[Source]:
@@ -243,7 +243,7 @@ class Database:
                     session.add(topic)
 
             session.commit()
-            logger.info(f"Saved {len(topics_info)} topics")
+            logger.info(f"💾 Saved {len(topics_info)} topics")
 
     def update_article_topic(self, article_id: int, topic_id: int, cleaned_content: str = None):
         """
@@ -539,7 +539,7 @@ class Database:
                 )
                 session.add(trend)
             session.commit()
-            logger.info(f"Saved {len(trends)} trends")
+            logger.info(f"💾 Saved {len(trends)} trends")
 
     def get_trends(self, days: int = 30, limit: int = 20) -> List[Trend]:
         """Get recent trends."""

@@ -79,7 +79,7 @@ class TopicMerger:
         candidates.sort(key=lambda x: x[2], reverse=True)
 
         logger.info(
-            f"Found {len(candidates)} merge candidates "
+            f"🔍 Found {len(candidates)} merge candidates "
             f"(similarity >= {self.similarity_threshold:.2f})"
         )
 
@@ -240,7 +240,7 @@ Consider:
             target_topic_id: Topic to merge into (will be updated)
             merged_name: Optional new name for merged topic
         """
-        logger.info(f"Merging topic {source_topic_id} into {target_topic_id}")
+        logger.info(f"🔀 Merging topic {source_topic_id} into {target_topic_id}")
 
         try:
             with self.db.get_session() as session:
@@ -312,7 +312,7 @@ Consider:
         candidates = self.find_merge_candidates(topic_centroids)
 
         if not candidates:
-            logger.info("No merge candidates found")
+            logger.info("✅ No merge candidates found")
             return []
 
         merge_actions = []
