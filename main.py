@@ -25,18 +25,51 @@ from src.config import settings
 # Disable tokenizers parallelism warning (occurs when forking after using transformers)
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
-# Configure logger
+# Configure logger with human-friendly format
 logger.remove()
+
+
+def format_log(record):
+    """Custom formatter for human-readable logs."""
+    time_str = record["time"].strftime("%H:%M:%S")
+    level = record["level"].name
+    message = record["message"]
+
+    # Add emoji prefix based on level (only if message doesn't already start with emoji)
+    level_prefix = ""
+    first_char = message[0] if message else ""
+    # Check if message already starts with emoji (Unicode > 127 for non-ASCII)
+    has_emoji = ord(first_char) > 127 if first_char else False
+
+    if not has_emoji:
+        if level == "WARNING":
+            level_prefix = "⚠️  "
+        elif level == "ERROR":
+            level_prefix = "❌ "
+        elif level == "DEBUG":
+            level_prefix = "🔍 "
+
+    # Simple, clean format: time | message
+    if level == "ERROR":
+        return f"<dim>{time_str}</dim> | <red><bold>{level_prefix}{message}</bold></red>\n"
+    elif level == "WARNING":
+        return f"<dim>{time_str}</dim> | <yellow>{level_prefix}{message}</yellow>\n"
+    else:
+        return f"<dim>{time_str}</dim> | {level_prefix}{message}\n"
+
+
 logger.add(
     sys.stderr,
-    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-    level="INFO"
+    format=format_log,
+    level="INFO",
+    colorize=True
 )
 logger.add(
     "logs/ad_trends_{time:YYYY-MM-DD}.log",
     rotation="1 day",
     retention="30 days",
-    level="DEBUG"
+    level="DEBUG",
+    format="{time:HH:mm:ss} | [{level}] {message}"
 )
 
 
