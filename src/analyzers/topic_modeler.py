@@ -186,7 +186,10 @@ class TopicModeler:
             logger.warning("No documents provided for topic extraction")
             return [], {}
 
+        logger.info(f"📊 Starting BERTopic clustering with {len(documents)} articles...")
+
         # Preprocess documents
+        logger.info(f"🧹 Step 1/5: Preprocessing text (removing URLs, emails, extra whitespace)...")
         processed_docs = [
             self._preprocess_text(doc)
             for doc in documents
@@ -200,14 +203,19 @@ class TopicModeler:
                 valid_docs.append(doc)
                 valid_indices.append(i)
 
+        filtered_count = len(documents) - len(valid_docs)
+        if filtered_count > 0:
+            logger.info(f"⚠️  Filtered out {filtered_count} articles (too short: < {min_document_length} chars)")
+
         if not valid_docs:
-            logger.warning("No valid documents after filtering")
+            logger.warning("❌ No valid documents after filtering")
             return [], {}
 
-        logger.info(f"Extracting topics from {len(valid_docs)} documents...")
+        logger.info(f"✅ {len(valid_docs)} articles ready for clustering")
 
         try:
             # Generate or retrieve embeddings (with cache if enabled)
+            logger.info(f"🧠 Step 2/5: Generating semantic embeddings (converting text → {384 if self.language == 'multilingual' else 384}-dimensional vectors)...")
             embeddings = None
             if use_cache and article_ids and article_urls:
                 from ..config import settings
@@ -232,10 +240,11 @@ class TopicModeler:
                         embedding_function=lambda docs: self.model.embedding_model.embed(docs)
                     )
 
-                    logger.info("Using cached embeddings for topic modeling")
+                    logger.info("   💾 Using cached embeddings (faster processing)")
 
             # Apply temporal weighting if enabled
             if self.use_temporal_weighting and published_dates and embeddings is not None:
+                logger.info(f"⏰ Step 3/5: Applying temporal weighting (newer articles get more influence)...")
                 from .temporal_weighting import TemporalWeightCalculator
 
                 # Filter published_dates to match valid_indices
@@ -244,14 +253,38 @@ class TopicModeler:
                 weighter = TemporalWeightCalculator(lambda_decay=self.temporal_lambda)
                 embeddings = weighter.apply_weights_to_embeddings(embeddings, valid_dates)
 
-                logger.info(f"Applied temporal weighting (λ={self.temporal_lambda}, "
-                           f"half-life={weighter.get_half_life_days():.1f} days)")
+                logger.info(f"   ✅ Applied temporal decay (half-life: {weighter.get_half_life_days():.1f} days)")
 
             # Fit model and predict topics
+            logger.info(f"🔍 Step 4/5: Clustering articles (UMAP → HDBSCAN)...")
+            logger.info(f"   📉 UMAP: Reducing dimensions from 384D → 5D to find natural groupings")
+            logger.info(f"   🎯 HDBSCAN: Finding dense clusters (min cluster size: {self.min_topic_size} articles)")
+
             if embeddings is not None:
                 topics, _ = self.model.fit_transform(valid_docs, embeddings=embeddings)
             else:
                 topics, _ = self.model.fit_transform(valid_docs)
+
+            # Analyze clustering results
+            from collections import Counter
+            topic_counts = Counter(topics)
+            outlier_count = topic_counts.get(-1, 0)
+            valid_topics = {tid: count for tid, count in topic_counts.items() if tid != -1}
+
+            logger.info(f"📊 Step 5/5: Clustering results:")
+            logger.info(f"   ✅ Found {len(valid_topics)} distinct topics")
+
+            if valid_topics:
+                for topic_id in sorted(valid_topics.keys()):
+                    count = valid_topics[topic_id]
+                    logger.info(f"      • Topic {topic_id}: {count} articles")
+
+            if outlier_count > 0:
+                outlier_pct = (outlier_count / len(topics)) * 100
+                logger.info(f"   🔸 Outliers: {outlier_count} articles ({outlier_pct:.1f}%)")
+                logger.info(f"      → Why outliers? These articles are too diverse or unique.")
+                logger.info(f"      → They don't form dense clusters with at least {self.min_topic_size} similar articles.")
+                logger.info(f"      → Think of them as 'one-off stories' rather than recurring themes.")
 
             # Get topic information
             topic_info = self._get_topic_info()
@@ -261,12 +294,20 @@ class TopicModeler:
             for i, orig_idx in enumerate(valid_indices):
                 full_topics[orig_idx] = topics[i]
 
-            logger.info(f"Extracted {len(topic_info)} topics (excluding outliers)")
+            logger.info(f"✨ BERTopic clustering complete: {len(topic_info)} topics ready for analysis")
 
             return full_topics, topic_info
 
         except Exception as e:
-            logger.error(f"Error extracting topics: {e}")
+            logger.error(f"❌ Error extracting topics: {e}")
+
+            # Check if error is due to insufficient data
+            if "zero-size array" in str(e) or "no identity" in str(e):
+                logger.warning(f"⚠️  Not enough articles to form clusters!")
+                logger.warning(f"   Current: {len(valid_docs)} articles")
+                logger.warning(f"   Required: minimum {self.min_topic_size} similar articles per cluster")
+                logger.warning(f"   💡 Solution: Wait for more articles to accumulate, or reduce TOPIC_MIN_TOPIC_SIZE")
+
             return [], {}
 
     def _get_topic_info(self) -> Dict[int, Dict]:
@@ -280,6 +321,8 @@ class TopicModeler:
             return {}
 
         topic_info = {}
+
+        logger.info("🏷️  Extracting topic keywords and metadata...")
 
         for topic_id in self.model.get_topics().keys():
             if topic_id == -1:  # Skip outlier topic
@@ -308,14 +351,18 @@ class TopicModeler:
             # Generate human-readable topic name
             topic_name = self._generate_topic_name(filtered_words[:5])
 
+            topic_size = self.model.get_topic_info()[
+                self.model.get_topic_info()['Topic'] == topic_id
+            ]['Count'].values[0] if len(self.model.get_topic_info()) > 0 else 0
+
+            logger.info(f"   📌 Topic {topic_id} ({topic_size} articles): {', '.join(filtered_words[:3])}...")
+
             topic_info[topic_id] = {
                 'id': topic_id,
                 'name': topic_name,
                 'top_words': filtered_words[:5],  # Use filtered words, not originals
                 'word_scores': word_scores,
-                'size': self.model.get_topic_info()[
-                    self.model.get_topic_info()['Topic'] == topic_id
-                ]['Count'].values[0] if len(self.model.get_topic_info()) > 0 else 0
+                'size': topic_size
             }
 
         return topic_info

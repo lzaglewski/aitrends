@@ -120,9 +120,17 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
         db: Database instance
         topic_modeler: TopicModeler instance
     """
-    logger.info("Running topic modeling...")
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info("🚀 STARTING TOPIC MODELING PIPELINE")
+    logger.info("=" * 80)
 
     # Get articles without topic assignment
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info("📥 PHASE 1: LOADING ARTICLES")
+    logger.info("=" * 80)
+
     with db.get_session() as session:
         from src.storage.models import Article
         articles = (
@@ -132,10 +140,11 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
         )
 
     if not articles:
-        logger.info("No articles need topic modeling")
+        logger.info("✅ No articles need topic modeling - all articles already processed!")
         return
 
-    logger.info(f"Found {len(articles)} articles without topics")
+    logger.info(f"📚 Found {len(articles)} articles waiting for topic assignment")
+    logger.info("=" * 80)
 
     # Extract cleaned content
     text_extractor = TopicExtractor()
@@ -169,7 +178,14 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
     if settings.DEDUP_ENABLED and len(documents) > 1:
         from src.processors.deduplicator import ArticleDeduplicator
 
-        logger.info("Running fuzzy deduplication...")
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("🔄 PHASE 2: FUZZY DEDUPLICATION")
+        logger.info("=" * 80)
+        logger.info(f"🔍 Checking {len(documents)} articles for near-duplicates...")
+        logger.info(f"   Similarity threshold: {settings.DEDUP_SIMILARITY_THRESHOLD*100:.0f}%")
+        logger.info(f"   (Articles with >{settings.DEDUP_SIMILARITY_THRESHOLD*100:.0f}% similarity are considered duplicates)")
+
         deduplicator = ArticleDeduplicator(settings.DEDUP_SIMILARITY_THRESHOLD)
 
         # Get source weights (empty for now, will be populated in FAZA 2)
@@ -200,12 +216,19 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
             article_urls = new_article_urls
             published_dates = new_published_dates
 
-            logger.info(
-                f"Deduplication metrics: {dedup_metrics['removed']} duplicates removed "
-                f"({dedup_metrics['rate']*100:.1f}% reduction)"
-            )
+            logger.info("=" * 80)
+            logger.info(f"📊 Deduplication Results:")
+            logger.info(f"   ✅ Kept: {len(deduplicated_articles)} unique articles")
+            logger.info(f"   🗑️  Removed: {dedup_metrics['removed']} duplicates ({dedup_metrics['rate']*100:.1f}%)")
+            logger.info("=" * 80)
+        else:
+            logger.info("=" * 80)
+            logger.info("   ✅ No duplicates found - all articles are unique!")
+            logger.info("=" * 80)
 
-    logger.info(f"Processing {len(documents)} documents with BERTopic...")
+    logger.info("=" * 80)
+    logger.info("🎯 PHASE 3: BERTOPIC CLUSTERING")
+    logger.info("=" * 80)
 
     # Extract topics (with embedding cache and temporal weighting if enabled)
     topic_ids, topic_info = topic_modeler.extract_topics(
@@ -217,11 +240,28 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
         use_cache=settings.EMBEDDING_CACHE_ENABLED
     )
 
-    logger.info(f"BERTopic completed: {len(topic_info)} raw topics identified")
+    # Count articles per topic
+    from collections import Counter
+    topic_distribution = Counter(topic_ids)
+    outliers_before_llm = topic_distribution.get(-1, 0)
+
+    logger.info("=" * 80)
+    logger.info(f"📊 BERTopic Results:")
+    logger.info(f"   • {len(topic_info)} topics found")
+    logger.info(f"   • {len(documents) - outliers_before_llm} articles assigned to topics")
+    logger.info(f"   • {outliers_before_llm} articles marked as outliers (too diverse)")
+    logger.info("=" * 80)
 
     # LLM Enhancement (if enabled)
+    original_topic_count = len(topic_info)
     if settings.USE_LLM_ENHANCEMENT and topic_info:
-        logger.info("Enhancing topics with LLM analysis...")
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("🤖 PHASE 4: LLM QUALITY FILTERING")
+        logger.info("=" * 80)
+        logger.info(f"🔍 Analyzing {len(topic_info)} topics to filter out noise...")
+        logger.info(f"   → Looking for: broader patterns, industry shifts, recurring themes")
+        logger.info(f"   → Filtering out: one-off announcements, isolated company news")
 
         # Group articles by topic_id
         articles_by_topic = {}
@@ -246,7 +286,11 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
         # Enhance with LLM
         topic_info = enhance_topics_with_llm(topic_info, articles_by_topic)
 
-        logger.info(f"LLM Enhancement completed: {len(topic_info)} trends identified")
+        logger.info("=" * 80)
+        logger.info(f"✨ LLM Filtering Results:")
+        logger.info(f"   ✅ Kept: {len(topic_info)} topics (genuine trends)")
+        logger.info(f"   ❌ Filtered: {original_topic_count - len(topic_info)} topics (noise/one-offs)")
+        logger.info("=" * 80)
 
     # Save topics to database
     if topic_info:
@@ -257,13 +301,32 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
         valid_topic_ids = set()
 
     # Update article topic assignments
+    articles_in_trends = 0
+    articles_marked_outliers = 0
+
     for i, article_id in enumerate(article_ids):
         if i < len(topic_ids):
             # If topic was filtered out by LLM, mark as outlier
             final_topic_id = topic_ids[i] if topic_ids[i] in valid_topic_ids else -1
             db.update_article_topic(article_id, final_topic_id, documents[i])
 
-    logger.info(f"Topic modeling completed: {len(topic_info)} final topics")
+            if final_topic_id != -1:
+                articles_in_trends += 1
+            else:
+                articles_marked_outliers += 1
+
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info("📈 FINAL ARTICLE DISTRIBUTION")
+    logger.info("=" * 80)
+    logger.info(f"   ✅ Assigned to trends: {articles_in_trends} articles ({articles_in_trends/len(documents)*100:.1f}%)")
+    logger.info(f"   🔸 Marked as outliers: {articles_marked_outliers} articles ({articles_marked_outliers/len(documents)*100:.1f}%)")
+    logger.info("")
+    logger.info("   💡 Why outliers?")
+    logger.info("      • Too diverse (don't cluster with other articles)")
+    logger.info(f"      • Part of small clusters (< {settings.TOPIC_MIN_TOPIC_SIZE} articles)")
+    logger.info("      • Belong to topics filtered by LLM (one-off news, not trends)")
+    logger.info("=" * 80)
 
 
 def run_scraping_job():
