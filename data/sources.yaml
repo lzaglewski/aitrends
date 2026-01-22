@@ -41,3 +41,17 @@ sources:
   - name: "Moz Blog"
     url: "https://moz.com/blog/feed"
     type: rss
+
+  - name: "Gamification Co"
+    url: "https://www.gamification.co/feed/"
+    type: rss
+
+  - name: "Sprawny Marketing"
+    url: "https://sprawnymarketing.pl/feed/"
+    type: rss
+
+  - name: "Neil Patel"
+    url: "https://neilpatel.com/feed/"
+    type: rss
+
+    

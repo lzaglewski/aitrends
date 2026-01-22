@@ -15,6 +15,7 @@ import os
 
 from src.scrapers.rss_fetcher import RSSFetcher
 from src.processors.keyword_extractor import TopicExtractor
+from src.processors.article_summarizer import ArticleSummarizer, run_summarization_pipeline
 from src.analyzers.topic_modeler import TopicModeler
 from src.analyzers.trend_detector import TrendDetector
 from src.analyzers.llm_trend_analyzer import enhance_topics_with_llm
@@ -150,6 +151,41 @@ def initialize_sources():
             logger.error(f"Error adding source {source_data.get('name')}: {e}")
 
 
+def run_summarization(db: Database) -> dict:
+    """
+    Run LLM summarization on articles that don't have summaries yet.
+
+    Args:
+        db: Database instance
+
+    Returns:
+        Statistics dictionary
+    """
+    if not settings.USE_LLM_SUMMARIZATION:
+        logger.info("LLM summarization disabled in config")
+        return {"processed": 0, "summarized": 0, "filtered": 0, "failed": 0}
+
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info("📝 LLM SUMMARIZATION PIPELINE")
+    logger.info("=" * 80)
+    logger.info("Generating 2-3 sentence summaries for better BERTopic clustering")
+    logger.info(f"   → Embedding model has 128 token limit, summaries fit better")
+    logger.info(f"   → Also filtering out non-trend content (job posts, events, etc.)")
+    logger.info("=" * 80)
+
+    stats = run_summarization_pipeline(db)
+
+    logger.info("=" * 80)
+    logger.info(f"📊 Summarization Results:")
+    logger.info(f"   ✅ Summarized: {stats['summarized']} articles")
+    logger.info(f"   🚫 Filtered (not trend-relevant): {stats['filtered']} articles")
+    logger.info(f"   ❌ Failed: {stats['failed']} articles")
+    logger.info("=" * 80)
+
+    return stats
+
+
 def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
     """
     Run topic modeling on articles that don't have topics assigned yet.
@@ -171,11 +207,22 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
 
     with db.get_session() as session:
         from src.storage.models import Article
-        articles = (
-            session.query(Article)
-            .filter(Article.topic_id == None)
-            .all()
-        )
+
+        # If summarization is enabled, only get trend-relevant articles
+        if settings.USE_LLM_SUMMARIZATION:
+            articles = (
+                session.query(Article)
+                .filter(Article.topic_id == None)
+                .filter(Article.is_trend_relevant == True)
+                .all()
+            )
+            logger.info(f"   (Filtering by is_trend_relevant=True)")
+        else:
+            articles = (
+                session.query(Article)
+                .filter(Article.topic_id == None)
+                .all()
+            )
 
     if not articles:
         logger.info("✅ No articles need topic modeling - all articles already processed!")
@@ -184,7 +231,7 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
     logger.info(f"📚 Found {len(articles)} articles waiting for topic assignment")
     logger.info("=" * 80)
 
-    # Extract cleaned content
+    # Extract cleaned content (use summary if available)
     text_extractor = TopicExtractor()
     documents = []
     article_ids = []
@@ -192,10 +239,19 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
     published_dates = []
     article_dicts = []
 
+    summary_count = 0
     for article in articles:
-        cleaned = text_extractor.extract_text(article.content)
-        if len(cleaned) >= settings.TOPIC_MIN_DOCUMENT_LENGTH:
-            documents.append(cleaned)
+        # Use summary if available (better for clustering due to 128 token limit)
+        if settings.USE_LLM_SUMMARIZATION and article.summary:
+            # Summary is already concise, minimal preprocessing needed
+            doc_text = article.summary
+            summary_count += 1
+        else:
+            # Fall back to full content extraction
+            doc_text = text_extractor.extract_text(article.content)
+
+        if len(doc_text) >= settings.TOPIC_MIN_DOCUMENT_LENGTH:
+            documents.append(doc_text)
             article_ids.append(article.id)
             article_urls.append(article.url)
             published_dates.append(article.published_date or article.scraped_date)
@@ -207,6 +263,9 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
                 'source_id': article.source_id,
                 'url': article.url
             })
+
+    if settings.USE_LLM_SUMMARIZATION and summary_count > 0:
+        logger.info(f"   📝 Using LLM summaries for {summary_count}/{len(documents)} articles")
 
     if not documents:
         logger.warning("No valid documents for topic modeling")
@@ -474,6 +533,13 @@ def run_scraping_job():
 
     logger.info(f"✨ Scraping completed: {total_articles} total articles ({new_articles_count} new)")
 
+    # Run LLM summarization on new articles (before topic modeling)
+    if new_articles_count > 0 and settings.USE_LLM_SUMMARIZATION:
+        try:
+            run_summarization(db)
+        except Exception as e:
+            logger.error(f"Error in LLM summarization: {e}")
+
     # Run topic modeling on new articles
     if new_articles_count > 0:
         try:
@@ -738,6 +804,16 @@ def main():
         help='Re-run topic modeling on all articles'
     )
     parser.add_argument(
+        '--summarize',
+        action='store_true',
+        help='Run LLM summarization on articles without summaries and exit'
+    )
+    parser.add_argument(
+        '--topics',
+        action='store_true',
+        help='Run only topic modeling and trend detection (skip scraping and summarization)'
+    )
+    parser.add_argument(
         '--debug',
         action='store_true',
         help='Enable DEBUG logging (shows LLM prompts and responses)'
@@ -779,12 +855,18 @@ def main():
     if args.remodel:
         logger.info("🔄 Re-running topic modeling on all articles...")
         db = Database()
+        db.init_db()
 
         # Reset topic_id for all articles
         with db.get_session() as session:
             from src.storage.models import Article
             session.query(Article).update({Article.topic_id: None})
             session.commit()
+
+        # Run summarization first if enabled (ensures summaries exist)
+        if settings.USE_LLM_SUMMARIZATION:
+            logger.info("📝 Running summarization before topic modeling...")
+            run_summarization(db)
 
         topic_modeler = TopicModeler(
             language=settings.TOPIC_MODEL_LANGUAGE,
@@ -797,6 +879,79 @@ def main():
         # Save new model
         os.makedirs(os.path.dirname(settings.TOPIC_MODEL_PATH), exist_ok=True)
         topic_modeler.save_model(settings.TOPIC_MODEL_PATH)
+
+        logger.success("✅ Topic modeling completed")
+        return
+
+    # Run summarization only
+    if args.summarize:
+        logger.info("🔄 Running LLM summarization on articles...")
+        db = Database()
+        db.init_db()
+        stats = run_summarization(db)
+        logger.success(f"✅ Summarization completed: {stats['summarized']} summarized, "
+                      f"{stats['filtered']} filtered, {stats['failed']} failed")
+        return
+
+    # Run topics only (skip scraping and summarization)
+    if args.topics:
+        logger.info("🎯 Running topic modeling and trend detection only...")
+        db = Database()
+        db.init_db()
+
+        topic_modeler = TopicModeler(
+            language=settings.TOPIC_MODEL_LANGUAGE,
+            min_topic_size=settings.TOPIC_MIN_TOPIC_SIZE,
+            min_samples=settings.TOPIC_MIN_SAMPLES,
+            nr_topics=settings.TOPIC_NR_TOPICS,
+            use_temporal_weighting=settings.USE_TEMPORAL_WEIGHTING,
+            temporal_lambda=settings.TEMPORAL_LAMBDA_DECAY
+        )
+
+        # Reset topic assignments to re-cluster
+        with db.get_session() as session:
+            from src.storage.models import Article
+            session.query(Article).update({Article.topic_id: None})
+            session.commit()
+            logger.info("🔄 Reset topic assignments for all articles")
+
+        run_topic_modeling(db, topic_modeler)
+
+        # Calculate and display trends
+        try:
+            logger.info("📊 Calculating trends...")
+            detector = TrendDetector(db)
+
+            if settings.USE_MULTIPERIOD_ANALYSIS:
+                trends = detector.calculate_trends_multiperiod(
+                    period_weeks=settings.MULTIPERIOD_WEEKS,
+                    num_periods=settings.MULTIPERIOD_COUNT,
+                    min_count=settings.TREND_MIN_COUNT,
+                    min_growth_rate=settings.TREND_MIN_GROWTH_RATE
+                )
+            else:
+                trends = detector.calculate_trends(
+                    window_days=settings.TREND_WINDOW_DAYS,
+                    min_count=settings.TREND_MIN_COUNT,
+                    min_growth_rate=settings.TREND_MIN_GROWTH_RATE
+                )
+
+            db.save_trends(trends)
+
+            trending_count = sum(1 for t in trends if t['is_trending'])
+            logger.info(f"🔥 Found {trending_count} trending topics")
+
+            if trends:
+                output = format_trends_for_output(
+                    trends,
+                    output_format=settings.TREND_OUTPUT_FORMAT,
+                    max_trends=settings.TREND_MAX_DISPLAY,
+                    period_days=settings.TREND_WINDOW_DAYS
+                )
+                print(output)
+
+        except Exception as e:
+            logger.error(f"Error calculating trends: {e}")
 
         logger.success("✅ Topic modeling completed")
         return

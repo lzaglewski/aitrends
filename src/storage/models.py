@@ -39,6 +39,9 @@ class Article(Base):
     author = Column(String(255), nullable=True)
     topic_id = Column(Integer, nullable=True, index=True)  # BERTopic topic ID (-1 = outlier)
     cleaned_content = Column(Text, nullable=True)  # Preprocessed content for topic modeling
+    summary = Column(Text, nullable=True)  # LLM-generated summary for clustering
+    is_trend_relevant = Column(Boolean, default=True)  # False = skip in clustering
+    summary_generated_at = Column(DateTime, nullable=True)
 
     source = relationship("Source", back_populates="articles")
     keywords = relationship("Keyword", back_populates="article", cascade="all, delete-orphan")

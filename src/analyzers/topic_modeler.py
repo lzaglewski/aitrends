@@ -112,13 +112,14 @@ class TopicModeler:
         ]
 
         combined_stopwords = list(set(polish_stopwords + english_stopwords))
+        self.stopwords = combined_stopwords
 
-        # Vectorizer with custom settings
+        # Vectorizer with custom settings (will be adjusted dynamically in extract_topics)
         vectorizer_model = CountVectorizer(
-            ngram_range=(1, 3),
+            ngram_range=(1, 2),  # Reduced from (1,3) for better stability with short docs
             stop_words=combined_stopwords,
             min_df=2,  # Word must appear in at least 2 documents
-            max_df=0.8,
+            max_df=0.95,  # Increased from 0.8 for more flexibility
             lowercase=True
         )
 
@@ -214,6 +215,19 @@ class TopicModeler:
         logger.info(f"✅ {len(valid_docs)} articles ready for clustering")
 
         try:
+            # Adjust vectorizer for document count (prevent min_df/max_df errors)
+            doc_count = len(valid_docs)
+            if doc_count < 50:
+                # For small corpora, relax constraints
+                self.model.vectorizer_model = CountVectorizer(
+                    ngram_range=(1, 2),
+                    stop_words=self.stopwords,
+                    min_df=1,
+                    max_df=1.0,
+                    lowercase=True
+                )
+                logger.info(f"   📝 Adjusted vectorizer for small corpus ({doc_count} docs)")
+
             # Generate or retrieve embeddings (with cache if enabled)
             logger.info(f"🧠 Step 2/5: Generating semantic embeddings (converting text → {384 if self.language == 'multilingual' else 384}-dimensional vectors)...")
             embeddings = None
@@ -237,7 +251,7 @@ class TopicModeler:
                         valid_docs,
                         valid_article_ids,
                         valid_article_urls,
-                        embedding_function=lambda docs: self.model.embedding_model.embed(docs)
+                        embedding_function=lambda docs: self.model.embedding_model.encode(docs)
                     )
 
                     logger.info("   💾 Using cached embeddings (faster processing)")
@@ -299,10 +313,38 @@ class TopicModeler:
             return full_topics, topic_info
 
         except Exception as e:
+            error_str = str(e)
             logger.error(f"❌ Error extracting topics: {e}")
 
+            # Check if error is due to vectorizer constraints
+            if "max_df corresponds to" in error_str or "min_df" in error_str:
+                logger.warning(f"⚠️  Vectorizer constraint error - retrying with relaxed settings...")
+                try:
+                    # Retry with minimal constraints
+                    self.model.vectorizer_model = CountVectorizer(
+                        ngram_range=(1, 1),
+                        stop_words=self.stopwords,
+                        min_df=1,
+                        max_df=1.0,
+                        lowercase=True
+                    )
+                    if embeddings is not None:
+                        topics, _ = self.model.fit_transform(valid_docs, embeddings=embeddings)
+                    else:
+                        topics, _ = self.model.fit_transform(valid_docs)
+
+                    topic_info = self._get_topic_info()
+                    full_topics = [-1] * len(documents)
+                    for i, orig_idx in enumerate(valid_indices):
+                        full_topics[orig_idx] = topics[i]
+
+                    logger.info(f"✨ Retry successful: {len(topic_info)} topics found")
+                    return full_topics, topic_info
+                except Exception as retry_error:
+                    logger.error(f"❌ Retry also failed: {retry_error}")
+
             # Check if error is due to insufficient data
-            if "zero-size array" in str(e) or "no identity" in str(e):
+            if "zero-size array" in error_str or "no identity" in error_str:
                 logger.warning(f"⚠️  Not enough articles to form clusters!")
                 logger.warning(f"   Current: {len(valid_docs)} articles")
                 logger.warning(f"   Required: minimum {self.min_topic_size} similar articles per cluster")
@@ -529,7 +571,7 @@ class TopicModeler:
 
             # Compute embeddings
             # Note: BERTopic's embedding_model is a backend, use embed() method
-            embeddings = self.model.embedding_model.embed(documents)
+            embeddings = self.model.embedding_model.encode(documents)
 
             # Calculate centroid (mean)
             import numpy as np

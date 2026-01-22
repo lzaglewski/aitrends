@@ -1,6 +1,37 @@
-# AI Trends Monitor v3.0
+# AI Trends Monitor v3.1
 
 Monitor advertising and marketing industry trends using **semantic topic modeling** with BERTopic + **LLM-enhanced trend identification** + **advanced temporal intelligence**. Automatically identifies emerging themes, tracks topic evolution, and detects semantic drift over time.
+
+## 🎯 What's New in v3.1
+
+**LLM Summarization Pipeline** - Dramatically improved clustering quality:
+
+### 📝 FAZA 5: Pre-Clustering Summarization
+- ✅ **LLM Article Summarization**: 2-3 sentence summaries before BERTopic clustering
+- ✅ **Trend Relevance Filtering**: Auto-filters job posts, events, press releases
+- ✅ **128 Token Optimization**: Summaries fit perfectly in embedding model limit
+- ✅ **New CLI Commands**: `--summarize` and `--topics` for granular control
+
+### Problem Solved
+BERTopic's embedding model (MiniLM) has a **128 token limit**. Full articles get truncated, losing meaning.
+
+**Before (v3.0)**: Full article → Truncated to 128 tokens → Poor embeddings → Weak clusters
+**After (v3.1)**: Full article → LLM Summary (2-3 sentences) → Full meaning captured → Strong clusters
+
+### New Pipeline Flow
+```
+Scraping → Save Articles → LLM Summarization → BERTopic (uses summary) → LLM Validation → Trends
+                                  ↓
+                    Filters: job posts, events, press releases
+                    Output: 2-3 sentence trend-focused summary
+```
+
+### Cost & Performance
+- ~$0.0003 per article (gpt-4o-mini)
+- 1000 articles ≈ $0.30
+- Processing: ~0.5s delay per article (rate limiting)
+
+---
 
 ## 🎯 What's New in v3.0
 
@@ -132,7 +163,8 @@ AI_TRENDS/
 │   │   └── content_scraper.py    # Full content extraction (NEW v3.0)
 │   ├── processors/
 │   │   ├── keyword_extractor.py  # Text extraction
-│   │   └── deduplicator.py       # Fuzzy deduplication (NEW v3.0)
+│   │   ├── deduplicator.py       # Fuzzy deduplication (NEW v3.0)
+│   │   └── article_summarizer.py # LLM summarization pipeline (NEW v3.1)
 │   ├── analyzers/
 │   │   ├── topic_modeler.py      # BERTopic + temporal weighting
 │   │   ├── trend_detector.py     # Multi-period analysis (v3.0)
@@ -218,7 +250,20 @@ Runs continuously, scraping every 6 hours (configurable).
 ```bash
 python main.py --remodel
 ```
-Re-analyzes all articles with BERTopic. Use when changing topic modeling parameters.
+Re-analyzes all articles with BERTopic. Runs summarization first if enabled.
+
+#### Run Only Summarization (NEW v3.1)
+```bash
+python main.py --summarize
+```
+Generates LLM summaries for articles without them. Use to pre-process before clustering.
+
+#### Run Only Topic Modeling (NEW v3.1)
+```bash
+python main.py --topics
+```
+Runs BERTopic clustering and trend detection only (skips scraping and summarization).
+Use when summaries already exist and you want to re-cluster.
 
 ## ⚙️ Configuration
 
@@ -244,6 +289,13 @@ OPENAI_API_KEY=sk-proj-...          # OpenAI API key (or set in .env)
 LLM_MODEL=gpt-4o-mini               # Model to use
 LLM_MAX_ARTICLES_PER_TOPIC=5        # Cost control: max articles per topic
 LLM_TEMPERATURE=0.3                 # Lower = more focused
+
+# LLM Summarization Pipeline (NEW v3.1)
+USE_LLM_SUMMARIZATION=True          # Enable pre-clustering summarization
+LLM_SUMMARY_DELAY_SECONDS=0.5       # Rate limiting delay between calls
+LLM_SUMMARY_MAX_CONTENT_CHARS=4000  # Max article content to send to LLM
+LLM_SUMMARY_MAX_RETRIES=3           # Retry attempts for failed calls
+LLM_SUMMARY_BATCH_SIZE=50           # Articles per processing batch
 
 # Quick Wins (NEW v3.0)
 DEDUP_ENABLED=True                  # Fuzzy deduplication
@@ -352,7 +404,7 @@ Set `TREND_OUTPUT_FORMAT=json` for structured data export.
 
 ## 🔧 How It Works
 
-### Architecture (v3.0)
+### Architecture (v3.1)
 
 ```
                     RSS Sources
@@ -361,11 +413,20 @@ Set `TREND_OUTPUT_FORMAT=json` for structured data export.
                          ↓
                   Fuzzy Deduplication (rapidfuzz)
                          ↓
-                    Clean Text
+                   Save to Database
+                         ↓
+         ┌────────────────────────────────┐
+         │  LLM Summarization (NEW v3.1)  │ ← GPT-4o-mini
+         ├────────────────────────────────┤
+         │ • 2-3 sentence summaries       │
+         │ • Trend relevance filtering    │
+         │ • Filters: jobs, events, PR    │
+         └────────────────────────────────┘
                          ↓
               ┌──────────────────────┐
               │  BERTopic Clustering │
               ├──────────────────────┤
+              │ • Uses SUMMARY text  │ ← Not full content!
               │ • Embedding (cache)  │
               │ • Temporal weighting │
               │ • UMAP + HDBSCAN     │
@@ -405,14 +466,42 @@ Set `TREND_OUTPUT_FORMAT=json` for structured data export.
          └────────────────────────────────┘
 ```
 
+### LLM Summarization Pipeline (NEW v3.1)
+
+**Why summarization?**
+- BERTopic's embedding model (MiniLM) has a **128 token limit**
+- Full articles (500-2000 words) get truncated → loss of meaning
+- Short summaries (2-3 sentences) capture the essence within the limit
+
+**Process:**
+1. **Article Input**: Full content (up to 4000 chars) sent to GPT-4o-mini
+2. **Summary Generation**: LLM creates 2-3 sentence trend-focused summary
+3. **Relevance Check**: LLM determines if article is trend-relevant
+4. **Filtering**: Non-trend content marked as `is_trend_relevant=False`
+
+**What gets filtered out:**
+- Job postings / hiring announcements
+- Event invitations / conference announcements
+- Press releases about company financials (without industry implications)
+- Product documentation / how-to guides (without trend context)
+- Purely promotional content
+
+**Database fields:**
+```sql
+ALTER TABLE articles ADD COLUMN summary TEXT;
+ALTER TABLE articles ADD COLUMN is_trend_relevant BOOLEAN DEFAULT TRUE;
+ALTER TABLE articles ADD COLUMN summary_generated_at DATETIME;
+```
+
 ### Hybrid BERTopic + LLM Pipeline
 
-1. **Embedding**: Convert articles to semantic vectors (Sentence Transformers)
-2. **Dimensionality Reduction**: UMAP to 5 dimensions
-3. **Clustering**: HDBSCAN to find topic clusters
-4. **Representation**: c-TF-IDF to extract topic keywords
-5. **LLM Analysis**: GPT-4o-mini validates trends and generates natural language names
-6. **Filtering**: Only real trends (not company news) are saved
+1. **Summarization (NEW)**: LLM generates 2-3 sentence summaries, filters non-trends
+2. **Embedding**: Convert **summaries** (not full articles) to semantic vectors
+3. **Dimensionality Reduction**: UMAP to 5 dimensions
+4. **Clustering**: HDBSCAN to find topic clusters
+5. **Representation**: c-TF-IDF to extract topic keywords
+6. **LLM Validation**: GPT-4o-mini validates trends and generates natural language names
+7. **Filtering**: Only real trends (not company news) are saved
 
 ### Trend Detection
 
@@ -447,6 +536,27 @@ python main.py --remodel --debug
 
 # Check database
 sqlite3 data/trends.db "SELECT * FROM topics LIMIT 5;"
+```
+
+### Testing v3.1 Features (Summarization)
+
+```bash
+# Run summarization only (generates summaries for all articles without them)
+python main.py --summarize
+# Check logs for: "Summarized: X articles, Filtered: Y articles"
+
+# Run topic modeling only (uses existing summaries, skips scraping)
+python main.py --topics
+# Check logs for: "Using LLM summaries for X/Y articles"
+
+# Check summaries in database
+sqlite3 data/trends.db "SELECT id, title, summary, is_trend_relevant FROM articles LIMIT 5;"
+
+# Check filtered articles (not trend-relevant)
+sqlite3 data/trends.db "SELECT COUNT(*) FROM articles WHERE is_trend_relevant = 0;"
+
+# Check articles with summaries
+sqlite3 data/trends.db "SELECT COUNT(*) FROM articles WHERE summary IS NOT NULL;"
 ```
 
 ### Testing v3.0 Features
@@ -633,10 +743,27 @@ Semantic drift: 33 topics checked, 3 drifts detected
 
 ## 🐛 Troubleshooting
 
+### Issue: Summarization not running (v3.1)
+- Check `USE_LLM_SUMMARIZATION=True` in config
+- Verify `OPENAI_API_KEY` is set in `.env` file
+- Check logs for: "ArticleSummarizer initialized with model: gpt-4o-mini"
+- Run standalone: `python main.py --summarize`
+
+### Issue: Too many articles filtered as "not trend-relevant" (v3.1)
+- Review the filtered articles: `sqlite3 data/trends.db "SELECT title FROM articles WHERE is_trend_relevant = 0;"`
+- The LLM may be too aggressive - check if legitimate trend articles are being filtered
+- Consider adjusting the prompt in `src/processors/article_summarizer.py`
+
+### Issue: BERTopic "max_df corresponds to < documents than min_df" error
+- This happens when summaries are too short/similar
+- The system auto-retries with relaxed vectorizer settings
+- If persistent, check summary quality in database
+
 ### Issue: No topics detected
 - Check `MIN_ARTICLE_LENGTH` - may be filtering too many articles
 - Lower `TOPIC_MIN_TOPIC_SIZE` to allow smaller topics
 - Verify articles are being scraped: `sqlite3 data/trends.db "SELECT COUNT(*) FROM articles;"`
+- Check if articles have summaries: `sqlite3 data/trends.db "SELECT COUNT(*) FROM articles WHERE summary IS NOT NULL;"`
 
 ### Issue: Poor topic quality
 - Increase `TOPIC_MIN_TOPIC_SIZE` for broader topics
@@ -708,6 +835,7 @@ Contributions welcome! Please:
 
 ## 🎉 Version History
 
+- **v3.1** (January 22, 2026) - LLM Summarization Pipeline: Pre-clustering article summarization for dramatically improved clustering quality
 - **v3.0** (January 21, 2026) - Advanced Intelligence: Multi-period analysis, temporal weighting, topic merging, correlation analysis, drift detection
 - **v2.1** (December 9, 2025) - LLM Enhancement: GPT-4o-mini integration for better trend identification
 - **v2.0** (November 2025) - Major Refactor: BERTopic semantic topic modeling
@@ -715,11 +843,18 @@ Contributions welcome! Please:
 
 ---
 
-**Version**: 3.0 (Advanced Intelligence)
-**Last Updated**: January 21, 2026
+**Version**: 3.1 (LLM Summarization Pipeline)
+**Last Updated**: January 22, 2026
 **Status**: Production Ready ✅
 
-**Key Metrics**:
+**Key Metrics v3.1**:
+- LLM-generated summaries optimize 128-token embedding limit
+- Auto-filters non-trend content (jobs, events, press releases)
+- New CLI commands: `--summarize`, `--topics`
+- 3 new database fields: `summary`, `is_trend_relevant`, `summary_generated_at`
+- 5 new configuration parameters
+
+**Key Metrics v3.0**:
 - 12 new features across 4 phases
 - 9 new modules (2,391 lines of code)
 - 2 new database tables

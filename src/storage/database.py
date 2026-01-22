@@ -141,6 +141,88 @@ class Database:
 
             return articles
 
+    # Summary operations
+    def get_articles_without_summary(self, limit: int = 100) -> List[Article]:
+        """
+        Get articles that don't have LLM-generated summaries yet.
+
+        Args:
+            limit: Maximum number of articles to return
+
+        Returns:
+            List of Article objects without summaries
+        """
+        with self.get_session() as session:
+            articles = (
+                session.query(Article)
+                .filter(Article.summary == None)
+                .order_by(Article.published_date.desc())
+                .limit(limit)
+                .all()
+            )
+            # Detach from session to avoid lazy loading issues
+            for article in articles:
+                session.expunge(article)
+            return articles
+
+    def update_article_summary(
+        self,
+        article_id: int,
+        summary: str,
+        is_trend_relevant: bool = True
+    ):
+        """
+        Update article's LLM-generated summary.
+
+        Args:
+            article_id: Article ID
+            summary: LLM-generated summary text
+            is_trend_relevant: Whether article should be included in clustering
+        """
+        with self.get_session() as session:
+            article = session.query(Article).filter(Article.id == article_id).first()
+            if article:
+                article.summary = summary
+                article.is_trend_relevant = is_trend_relevant
+                article.summary_generated_at = datetime.utcnow()
+                session.commit()
+                logger.debug(f"Updated summary for article {article_id}")
+
+    def get_trend_relevant_articles(
+        self,
+        with_summary: bool = True,
+        limit: Optional[int] = None
+    ) -> List[Article]:
+        """
+        Get articles marked as trend-relevant.
+
+        Args:
+            with_summary: If True, only return articles that have summaries
+            limit: Optional limit on number of articles
+
+        Returns:
+            List of trend-relevant Article objects
+        """
+        with self.get_session() as session:
+            query = (
+                session.query(Article)
+                .filter(Article.is_trend_relevant == True)
+            )
+
+            if with_summary:
+                query = query.filter(Article.summary != None)
+
+            query = query.order_by(Article.published_date.desc())
+
+            if limit:
+                query = query.limit(limit)
+
+            articles = query.all()
+            # Detach from session
+            for article in articles:
+                session.expunge(article)
+            return articles
+
     # Keyword operations
     def save_keywords(self, article_id: int, keywords: List[tuple]):
         """

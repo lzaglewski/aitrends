@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     LLM_MAX_TOKENS: int = 500  # Max tokens for LLM response
     LLM_TEMPERATURE: float = 0.3  # Lower = more focused/deterministic
 
+    # LLM Summarization Pipeline settings
+    USE_LLM_SUMMARIZATION: bool = True  # Enable LLM-based article summarization before clustering
+    LLM_SUMMARY_DELAY_SECONDS: float = 0.5  # Delay between LLM calls (rate limiting)
+    LLM_SUMMARY_MAX_CONTENT_CHARS: int = 4000  # Max article content to send to LLM
+    LLM_SUMMARY_MAX_RETRIES: int = 3  # Max retries for failed LLM calls
+    LLM_SUMMARY_BATCH_SIZE: int = 50  # Number of articles to process per batch
+
     # Deduplication settings
     DEDUP_ENABLED: bool = True  # Enable fuzzy deduplication of articles
     DEDUP_SIMILARITY_THRESHOLD: float = 0.85  # Similarity threshold (0-1) for duplicates
