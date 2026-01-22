@@ -1,736 +1,736 @@
 # AI Trends Monitor v3.1
 
-Monitor advertising and marketing industry trends using **semantic topic modeling** with BERTopic + **LLM-enhanced trend identification** + **advanced temporal intelligence**. Automatically identifies emerging themes, tracks topic evolution, and detects semantic drift over time.
+Monitoruj trendy w branży reklamowej i marketingowej za pomocą **semantycznego modelowania tematów** z BERTopic + **identyfikacji trendów wzmocnionej LLM** + **zaawansowanej analizy temporalnej**. Automatycznie identyfikuje pojawiające się tematy, śledzi ewolucję tematów i wykrywa dryft semantyczny w czasie.
 
-## 🎯 What's New in v3.1
+## 🎯 Co nowego w v3.1
 
-**LLM Summarization Pipeline** - Dramatically improved clustering quality:
+**Pipeline Podsumowań LLM** - Drastycznie ulepszona jakość klastrowania:
 
-### 📝 FAZA 5: Pre-Clustering Summarization
-- ✅ **LLM Article Summarization**: 2-3 sentence summaries before BERTopic clustering
-- ✅ **Trend Relevance Filtering**: Auto-filters job posts, events, press releases
-- ✅ **128 Token Optimization**: Summaries fit perfectly in embedding model limit
-- ✅ **New CLI Commands**: `--summarize` and `--topics` for granular control
+### 📝 FAZA 5: Podsumowanie przed klastrowaniem
+- ✅ **Podsumowania artykułów przez LLM**: 2-3 zdania podsumowania przed klastrowaniem BERTopic
+- ✅ **Filtrowanie istotności dla trendów**: Auto-filtrowanie ofert pracy, wydarzeń, komunikatów prasowych
+- ✅ **Optymalizacja 128 tokenów**: Podsumowania idealnie mieszczą się w limicie modelu embeddingów
+- ✅ **Nowe komendy CLI**: `--summarize` i `--topics` dla szczegółowej kontroli
 
-### Problem Solved
-BERTopic's embedding model (MiniLM) has a **128 token limit**. Full articles get truncated, losing meaning.
+### Rozwiązany problem
+Model embeddingów BERTopic (MiniLM) ma **limit 128 tokenów**. Pełne artykuły są obcinane, tracąc znaczenie.
 
-**Before (v3.0)**: Full article → Truncated to 128 tokens → Poor embeddings → Weak clusters
-**After (v3.1)**: Full article → LLM Summary (2-3 sentences) → Full meaning captured → Strong clusters
+**Przed (v3.0)**: Pełny artykuł → Obcięty do 128 tokenów → Słabe embeddingi → Słabe klastry
+**Po (v3.1)**: Pełny artykuł → Podsumowanie LLM (2-3 zdania) → Pełne znaczenie zachowane → Silne klastry
 
-### New Pipeline Flow
+### Nowy przepływ Pipeline
 ```
-Scraping → Save Articles → LLM Summarization → BERTopic (uses summary) → LLM Validation → Trends
+Scraping → Zapis artykułów → Podsumowanie LLM → BERTopic (używa podsumowania) → Walidacja LLM → Trendy
                                   ↓
-                    Filters: job posts, events, press releases
-                    Output: 2-3 sentence trend-focused summary
+                    Filtry: oferty pracy, wydarzenia, komunikaty prasowe
+                    Wynik: 2-3 zdaniowe podsumowanie skupione na trendach
 ```
 
-### Cost & Performance
-- ~$0.0003 per article (gpt-4o-mini)
-- 1000 articles ≈ $0.30
-- Processing: ~0.5s delay per article (rate limiting)
+### Koszt i wydajność
+- ~$0.0003 za artykuł (gpt-4o-mini)
+- 1000 artykułów ≈ $0.30
+- Przetwarzanie: ~0.5s opóźnienia na artykuł (rate limiting)
 
 ---
 
-## 🎯 What's New in v3.0
+## 🎯 Co nowego w v3.0
 
-**Major Intelligence Upgrade** - 12 new features across 4 phases:
+**Główna aktualizacja inteligencji** - 12 nowych funkcji w 4 fazach:
 
-### 📊 FAZA 1: Quick Wins
-- ✅ **Fuzzy Deduplication**: 10-20% reduction in duplicate articles (rapidfuzz)
-- ✅ **Embedding Cache**: 50-70% faster reruns with 90-day TTL cache
-- ✅ **BERTopic Tuning**: Enhanced clustering (min_topic_size=10, min_samples=3)
+### 📊 FAZA 1: Szybkie usprawnienia
+- ✅ **Rozmyta deduplikacja**: 10-20% redukcja duplikatów artykułów (rapidfuzz)
+- ✅ **Cache embeddingów**: 50-70% szybsze ponowne uruchomienia z 90-dniowym TTL cache
+- ✅ **Tuning BERTopic**: Ulepszone klastrowanie (min_topic_size=10, min_samples=3)
 
-### 🎯 FAZA 2: Data Quality
-- ✅ **Full Article Scraping**: Complete content extraction when RSS truncates (trafilatura)
-- ✅ **Source Credibility Weighting**: YAML-based source weights with blacklist support
-- ✅ **Weighted Trend Detection**: High-quality sources have more influence
+### 🎯 FAZA 2: Jakość danych
+- ✅ **Scraping pełnej treści**: Pełna ekstrakcja zawartości gdy RSS obcina (trafilatura)
+- ✅ **Wagi wiarygodności źródeł**: Wagi źródeł oparte na YAML z obsługą czarnej listy
+- ✅ **Ważona detekcja trendów**: Wysokiej jakości źródła mają większy wpływ
 
-### ⏰ FAZA 3: Temporal Intelligence
-- ✅ **Time-Weighted Embeddings**: Recent articles prioritized (14-day half-life)
-- ✅ **Trend History Tracking**: Historical snapshots with centroid embeddings
-- ✅ **Multi-Period Analysis**: Lifecycle stages (🌱 emerging → 📈 growing → ⭐ peak → 📉 declining)
+### ⏰ FAZA 3: Inteligencja temporalna
+- ✅ **Ważone czasowo embeddingi**: Priorytet dla nowszych artykułów (14-dniowy okres połowicznego rozpadu)
+- ✅ **Śledzenie historii trendów**: Historyczne snapshoty z centroidami embeddingów
+- ✅ **Analiza wielookresowa**: Etapy cyklu życia (🌱 powstający → 📈 rosnący → ⭐ szczyt → 📉 malejący)
 
-### 🧠 FAZA 4: Advanced Analytics
-- ✅ **Topic Merging**: LLM-validated automatic duplicate topic consolidation
-- ✅ **Cross-Topic Correlation**: Source overlap + temporal + semantic proximity
-- ✅ **Semantic Drift Detection**: LLM-described topic evolution alerts
+### 🧠 FAZA 4: Zaawansowana analityka
+- ✅ **Łączenie tematów**: Automatyczna konsolidacja duplikatów tematów walidowana przez LLM
+- ✅ **Korelacja między tematami**: Nakładanie się źródeł + temporalne + semantyczna bliskość
+- ✅ **Wykrywanie dryftu semantycznego**: Alerty o ewolucji tematów opisane przez LLM
 
-## 🎯 What's New in v2.1
+## 🎯 Co nowego w v2.1
 
-**LLM Enhancement** - Hybrid BERTopic + GPT-4o-mini for better trend identification:
+**Wzmocnienie LLM** - Hybrydowy BERTopic + GPT-4o-mini dla lepszej identyfikacji trendów:
 
-- ✅ **Context Understanding**: LLM distinguishes real trends from company news
-- ✅ **Better Naming**: Natural language trend names instead of keyword combinations
-- ✅ **Quality Filtering**: Filters out noise topics (Polish declensions, stopwords)
-- ✅ **Cost Effective**: ~$0.12/month using gpt-4o-mini
+- ✅ **Rozumienie kontekstu**: LLM rozróżnia prawdziwe trendy od wiadomości firmowych
+- ✅ **Lepsze nazewnictwo**: Naturalne nazwy trendów zamiast kombinacji słów kluczowych
+- ✅ **Filtrowanie jakości**: Odfiltrowuje szumowe tematy (polskie deklinacje, stopwordy)
+- ✅ **Opłacalność**: ~$0.12/miesiąc używając gpt-4o-mini
 
-## 🎯 What's New in v2.0
+## 🎯 Co nowego w v2.0
 
-**Completely refactored** from keyword-based to topic-based trend detection:
+**Całkowicie przebudowany** z detekcji opartej na słowach kluczowych na detekcję opartą na tematach:
 
-- ✅ **BERTopic**: Semantic topic modeling instead of keyword extraction
-- ✅ **Multilingual Support**: Handles English, Polish, and mixed sources
-- ✅ **Named Entity Filtering**: Removes company/person names from trends
-- ✅ **Better Insights**: Detects thematic concepts, not just word frequencies
-- ✅ **Email/Slack Formatters**: Ready for automated delivery
+- ✅ **BERTopic**: Semantyczne modelowanie tematów zamiast ekstrakcji słów kluczowych
+- ✅ **Wsparcie wielojęzyczne**: Obsługuje angielski, polski i mieszane źródła
+- ✅ **Filtrowanie encji nazwanych**: Usuwa nazwy firm/osób z trendów
+- ✅ **Lepsze wnioski**: Wykrywa koncepcje tematyczne, nie tylko częstotliwości słów
+- ✅ **Formatery Email/Slack**: Gotowe do automatycznej dostawy
 
-### Before vs. After
+### Przed vs. Po
 
-**v1.0 (Keyword-Based)**:
+**v1.0 (Oparte na słowach kluczowych)**:
 ```
-Trending:
-- Google (15 occurrences)
-- CEO John Doe (8 occurrences)
-- Search Console (12 occurrences)
+Trendy:
+- Google (15 wystąpień)
+- CEO John Doe (8 wystąpień)
+- Search Console (12 wystąpień)
 ```
 
-**v2.0 (Topic-Based with BERTopic only)**:
+**v2.0 (Oparte na tematach - tylko BERTopic)**:
 ```
-Trending Topics:
+Trendy tematyczne:
 - Search + Content + Business (+156%)
-- Ponad + Kampanii + Rynku (NEW)  ← Polish declensions
-- Google + Gemini + AI (+89%)    ← Company names
+- Ponad + Kampanii + Rynku (NOWY)  ← Polskie deklinacje
+- Google + Gemini + AI (+89%)    ← Nazwy firm
 ```
 
-**v2.1 (LLM-Enhanced)**:
+**v2.1 (Wzmocnione LLM)**:
 ```
-Trending Topics:
-- AI-Powered Content Generation in Advertising (+156%)
-  Description: Major platforms integrating generative AI for ad creation
+Trendy tematyczne:
+- Generowanie treści wspierane przez AI w reklamie (+156%)
+  Opis: Główne platformy integrują generatywne AI do tworzenia reklam
 
-- Privacy-First Marketing Strategies (NEW)
-  Description: Industry shift toward cookieless tracking and consent management
-```
-
-**v3.0 (Advanced Intelligence)**:
-```
-Trending Topics:
-- 🔥 Trending · 📈 Growing AI-Powered Content Generation (+156%)
-  Description: Major platforms integrating generative AI for ad creation
-  Stage: Growing | Velocity: +0.15 | Articles: 23 (weighted: 31.5)
-
-  Related Topics:
-    • Marketing Automation Tools (correlation: 0.68)
-    • Generative AI Ethics (correlation: 0.54)
-
-  Semantic Drift: ⚠️ Topic evolved (drift: 0.32)
-    Evolution: Shifted from basic AI tools to enterprise-level integration platforms
-
-  Historical Trend: [3 → 5 → 9 → 23 articles over 8 weeks]
-
-- 🌟 New · 🌱 Emerging Privacy-First Marketing Strategies (NEW)
-  Description: Industry shift toward cookieless tracking and consent management
-  Stage: Emerging | Velocity: +0.28 | Articles: 12 (weighted: 15.0)
-
-  Historical Trend: [0 → 0 → 2 → 12 articles over 8 weeks]
+- Strategie marketingowe Privacy-First (NOWY)
+  Opis: Przesunięcie branży w kierunku śledzenia bez cookies i zarządzania zgodami
 ```
 
-## 🚀 Features
+**v3.0 (Zaawansowana inteligencja)**:
+```
+Trendy tematyczne:
+- 🔥 Trendujący · 📈 Rosnący Generowanie treści AI (+156%)
+  Opis: Główne platformy integrują generatywne AI do tworzenia reklam
+  Etap: Rosnący | Prędkość: +0.15 | Artykuły: 23 (ważone: 31.5)
 
-### Core Intelligence
-- **LLM-Enhanced Trend Analysis**: GPT-4o-mini validates and names trends with context understanding
-- **Semantic Topic Modeling**: BERTopic identifies thematic clusters
-- **Time-Weighted Analysis**: Recent articles prioritized with exponential decay
-- **Multi-Period Lifecycle**: Track trends through emerging → growing → peak → declining stages
+  Powiązane tematy:
+    • Narzędzia automatyzacji marketingu (korelacja: 0.68)
+    • Etyka generatywnego AI (korelacja: 0.54)
 
-### Data Processing
-- **Fuzzy Deduplication**: Automatic removal of duplicate articles (85% similarity threshold)
-- **Full Content Scraping**: Extract complete article text when RSS truncates (trafilatura)
-- **Source Credibility Weighting**: YAML-configured weights for high-quality sources
-- **Embedding Cache**: 50-70% performance improvement on reruns
+  Dryft semantyczny: ⚠️ Temat ewoluował (dryft: 0.32)
+    Ewolucja: Przesunięcie od podstawowych narzędzi AI do platform integracyjnych klasy enterprise
 
-### Advanced Analytics
-- **Topic Merging**: LLM-validated consolidation of duplicate topics
-- **Cross-Topic Correlation**: Identify related trends (source overlap + temporal + semantic)
-- **Semantic Drift Detection**: Alert when topics evolve significantly
-- **Trend History**: Historical snapshots with centroid embeddings
+  Trend historyczny: [3 → 5 → 9 → 23 artykuły przez 8 tygodni]
 
-### Infrastructure
-- **RSS Feed Monitoring**: Automatically fetch articles from marketing/AI sources
-- **Multi-format Output**: Console, Email (HTML), Slack, JSON
-- **SQLite Database**: Local storage with deduplication
-- **Automated Scheduling**: Periodic scraping with configurable intervals
+- 🌟 Nowy · 🌱 Powstający Strategie marketingowe Privacy-First (NOWY)
+  Opis: Przesunięcie branży w kierunku śledzenia bez cookies i zarządzania zgodami
+  Etap: Powstający | Prędkość: +0.28 | Artykuły: 12 (ważone: 15.0)
 
-## 📁 Project Structure
+  Trend historyczny: [0 → 0 → 2 → 12 artykuły przez 8 tygodni]
+```
+
+## 🚀 Funkcje
+
+### Podstawowa inteligencja
+- **Analiza trendów wzmocniona LLM**: GPT-4o-mini waliduje i nazywa trendy z rozumieniem kontekstu
+- **Semantyczne modelowanie tematów**: BERTopic identyfikuje klastry tematyczne
+- **Analiza ważona czasowo**: Priorytet dla nowszych artykułów z wykładniczym zanikaniem
+- **Wielookresowy cykl życia**: Śledź trendy przez etapy powstający → rosnący → szczyt → malejący
+
+### Przetwarzanie danych
+- **Rozmyta deduplikacja**: Automatyczne usuwanie duplikatów artykułów (próg podobieństwa 85%)
+- **Scraping pełnej treści**: Ekstrakcja kompletnego tekstu artykułu gdy RSS obcina (trafilatura)
+- **Wagi wiarygodności źródeł**: Wagi konfigurowane w YAML dla wysokiej jakości źródeł
+- **Cache embeddingów**: 50-70% poprawa wydajności przy ponownych uruchomieniach
+
+### Zaawansowana analityka
+- **Łączenie tematów**: Konsolidacja duplikatów tematów walidowana przez LLM
+- **Korelacja między tematami**: Identyfikacja powiązanych trendów (nakładanie się źródeł + temporalne + semantyczne)
+- **Wykrywanie dryftu semantycznego**: Alert gdy tematy znacząco ewoluują
+- **Historia trendów**: Historyczne snapshoty z centroidami embeddingów
+
+### Infrastruktura
+- **Monitorowanie kanałów RSS**: Automatyczne pobieranie artykułów ze źródeł marketingowych/AI
+- **Wiele formatów wyjściowych**: Konsola, Email (HTML), Slack, JSON
+- **Baza danych SQLite**: Lokalne przechowywanie z deduplikacją
+- **Automatyczne harmonogramowanie**: Okresowy scraping z konfigurowalnymi interwałami
+
+## 📁 Struktura projektu
 
 ```
 AI_TRENDS/
 ├── src/
 │   ├── scrapers/
-│   │   ├── rss_fetcher.py        # RSS feed scraper
-│   │   └── content_scraper.py    # Full content extraction (NEW v3.0)
+│   │   ├── rss_fetcher.py        # Scraper kanałów RSS
+│   │   └── content_scraper.py    # Ekstrakcja pełnej treści (NOWE v3.0)
 │   ├── processors/
-│   │   ├── keyword_extractor.py  # Text extraction
-│   │   ├── deduplicator.py       # Fuzzy deduplication (NEW v3.0)
-│   │   └── article_summarizer.py # LLM summarization pipeline (NEW v3.1)
+│   │   ├── keyword_extractor.py  # Ekstrakcja tekstu
+│   │   ├── deduplicator.py       # Rozmyta deduplikacja (NOWE v3.0)
+│   │   └── article_summarizer.py # Pipeline podsumowań LLM (NOWE v3.1)
 │   ├── analyzers/
-│   │   ├── topic_modeler.py      # BERTopic + temporal weighting
-│   │   ├── trend_detector.py     # Multi-period analysis (v3.0)
-│   │   ├── lifecycle_analyzer.py # Lifecycle stages (NEW v3.0)
-│   │   ├── topic_merger.py       # LLM-validated merging (NEW v3.0)
-│   │   ├── correlation_analyzer.py # Cross-topic correlations (NEW v3.0)
-│   │   ├── drift_detector.py     # Semantic drift detection (NEW v3.0)
-│   │   ├── temporal_weighting.py # Time-weighted embeddings (NEW v3.0)
-│   │   └── llm_trend_analyzer.py # LLM enhancement
-│   ├── formatters/         # Output formatters (console, email, slack)
+│   │   ├── topic_modeler.py      # BERTopic + wagi temporalne
+│   │   ├── trend_detector.py     # Analiza wielookresowa (v3.0)
+│   │   ├── lifecycle_analyzer.py # Etapy cyklu życia (NOWE v3.0)
+│   │   ├── topic_merger.py       # Łączenie walidowane przez LLM (NOWE v3.0)
+│   │   ├── correlation_analyzer.py # Korelacje między tematami (NOWE v3.0)
+│   │   ├── drift_detector.py     # Wykrywanie dryftu semantycznego (NOWE v3.0)
+│   │   ├── temporal_weighting.py # Embeddingi ważone czasowo (NOWE v3.0)
+│   │   └── llm_trend_analyzer.py # Wzmocnienie LLM
+│   ├── formatters/         # Formatery wyjścia (konsola, email, slack)
 │   ├── storage/
-│   │   ├── models.py             # Database schema + 2 new tables (v3.0)
-│   │   ├── database.py           # Database operations
-│   │   └── embedding_cache.py    # Embedding cache manager (NEW v3.0)
+│   │   ├── models.py             # Schemat bazy danych + 2 nowe tabele (v3.0)
+│   │   ├── database.py           # Operacje bazodanowe
+│   │   └── embedding_cache.py    # Menedżer cache embeddingów (NOWE v3.0)
 │   ├── utils/
-│   │   └── source_weights.py     # Source credibility manager (NEW v3.0)
-│   └── config.py           # Configuration (24 new parameters in v3.0)
+│   │   └── source_weights.py     # Menedżer wiarygodności źródeł (NOWE v3.0)
+│   └── config.py           # Konfiguracja (24 nowe parametry w v3.0)
 ├── data/
-│   ├── sources.yaml        # List of RSS sources to monitor
-│   ├── source_weights.yaml # Source credibility weights (NEW v3.0)
-│   ├── trends.db           # SQLite database (auto-created)
-│   └── models/             # Saved BERTopic models
-├── logs/                   # Application logs
-├── main.py                 # Main scheduler
-├── requirements.txt        # Python dependencies
-└── IMPLEMENTATION.md       # Detailed technical documentation
+│   ├── sources.yaml        # Lista źródeł RSS do monitorowania
+│   ├── source_weights.yaml # Wagi wiarygodności źródeł (NOWE v3.0)
+│   ├── trends.db           # Baza danych SQLite (auto-tworzona)
+│   └── models/             # Zapisane modele BERTopic
+├── logs/                   # Logi aplikacji
+├── main.py                 # Główny harmonogram
+├── requirements.txt        # Zależności Pythona
+└── IMPLEMENTATION.md       # Szczegółowa dokumentacja techniczna
 ```
 
-## 🏃 Quick Start
+## 🏃 Szybki start
 
-### 1. Installation
+### 1. Instalacja
 
 ```bash
-# Clone repository
+# Sklonuj repozytorium
 git clone <repo-url>
 cd AI_TRENDS
 
-# Create virtual environment
+# Utwórz środowisko wirtualne
 python3 -m venv venv
 source venv/bin/activate  # Linux/Mac
-# or: venv\Scripts\activate  # Windows
+# lub: venv\Scripts\activate  # Windows
 
-# Install dependencies
+# Zainstaluj zależności
 pip install -r requirements.txt
 ```
 
-### 1.5 Configure OpenAI API (for LLM Enhancement)
+### 1.5 Skonfiguruj OpenAI API (dla wzmocnienia LLM)
 
-Create a `.env` file in the project root:
+Utwórz plik `.env` w głównym katalogu projektu:
 
 ```bash
-# OpenAI API Key for LLM Enhancement
-OPENAI_API_KEY=sk-proj-your-api-key-here
+# Klucz API OpenAI dla wzmocnienia LLM
+OPENAI_API_KEY=sk-proj-twoj-klucz-api-tutaj
 ```
 
-**Note**: LLM enhancement is optional. Set `USE_LLM_ENHANCEMENT=False` in [src/config.py](src/config.py#L30) to disable.
+**Uwaga**: Wzmocnienie LLM jest opcjonalne. Ustaw `USE_LLM_ENHANCEMENT=False` w [src/config.py](src/config.py#L30) aby wyłączyć.
 
-### 2. Initialize Database
+### 2. Inicjalizacja bazy danych
 
 ```bash
-# Create database tables
+# Utwórz tabele bazy danych
 python main.py --init-db
 
-# Load sources from sources.yaml
+# Załaduj źródła z sources.yaml
 python main.py --init-sources
 ```
 
-### 3. Run the System
+### 3. Uruchom system
 
-#### One-Time Run
+#### Jednorazowe uruchomienie
 ```bash
 python main.py --once
 ```
-Scrapes sources, runs topic modeling, calculates trends, and exits.
+Scrapuje źródła, uruchamia modelowanie tematów, oblicza trendy i kończy.
 
-#### Continuous Mode (Scheduler)
+#### Tryb ciągły (Harmonogram)
 ```bash
 python main.py
 ```
-Runs continuously, scraping every 6 hours (configurable).
+Działa ciągle, scrapując co 6 godzin (konfigurowalne).
 
-#### Re-run Topic Modeling
+#### Ponowne uruchomienie modelowania tematów
 ```bash
 python main.py --remodel
 ```
-Re-analyzes all articles with BERTopic. Runs summarization first if enabled.
+Ponownie analizuje wszystkie artykuły za pomocą BERTopic. Najpierw uruchamia podsumowanie jeśli włączone.
 
-#### Run Only Summarization (NEW v3.1)
+#### Uruchom tylko podsumowanie (NOWE v3.1)
 ```bash
 python main.py --summarize
 ```
-Generates LLM summaries for articles without them. Use to pre-process before clustering.
+Generuje podsumowania LLM dla artykułów, które ich nie mają. Użyj do przetworzenia przed klastrowaniem.
 
-#### Run Only Topic Modeling (NEW v3.1)
+#### Uruchom tylko modelowanie tematów (NOWE v3.1)
 ```bash
 python main.py --topics
 ```
-Runs BERTopic clustering and trend detection only (skips scraping and summarization).
-Use when summaries already exist and you want to re-cluster.
+Uruchamia tylko klastrowanie BERTopic i wykrywanie trendów (pomija scraping i podsumowanie).
+Użyj gdy podsumowania już istnieją i chcesz ponownie sklastrować.
 
-## ⚙️ Configuration
+## ⚙️ Konfiguracja
 
-Edit [src/config.py](src/config.py) or create `.env` file:
+Edytuj [src/config.py](src/config.py) lub utwórz plik `.env`:
 
 ```env
-# Database
+# Baza danych
 DATABASE_URL=sqlite:///./data/trends.db
 
 # Scraping
 SCRAPE_INTERVAL_HOURS=6
 MIN_ARTICLE_LENGTH=30
 
-# Topic Modeling
+# Modelowanie tematów
 TOPIC_MODEL_LANGUAGE=multilingual  # 'multilingual', 'en', 'pl'
-TOPIC_MIN_TOPIC_SIZE=10             # Minimum articles per topic (v3.0: increased)
-TOPIC_MIN_SAMPLES=3                 # Minimum samples for HDBSCAN core points (NEW v3.0)
-TOPIC_MIN_DOCUMENT_LENGTH=50        # Minimum text length
+TOPIC_MIN_TOPIC_SIZE=10             # Minimalna liczba artykułów na temat (v3.0: zwiększona)
+TOPIC_MIN_SAMPLES=3                 # Minimalna liczba próbek dla punktów rdzenia HDBSCAN (NOWE v3.0)
+TOPIC_MIN_DOCUMENT_LENGTH=50        # Minimalna długość tekstu
 
-# LLM Enhancement (v2.1)
-USE_LLM_ENHANCEMENT=True            # Enable LLM-based trend analysis
-OPENAI_API_KEY=sk-proj-...          # OpenAI API key (or set in .env)
-LLM_MODEL=gpt-4o-mini               # Model to use
-LLM_MAX_ARTICLES_PER_TOPIC=5        # Cost control: max articles per topic
-LLM_TEMPERATURE=0.3                 # Lower = more focused
+# Wzmocnienie LLM (v2.1)
+USE_LLM_ENHANCEMENT=True            # Włącz analizę trendów opartą na LLM
+OPENAI_API_KEY=sk-proj-...          # Klucz API OpenAI (lub ustaw w .env)
+LLM_MODEL=gpt-4o-mini               # Model do użycia
+LLM_MAX_ARTICLES_PER_TOPIC=5        # Kontrola kosztów: max artykułów na temat
+LLM_TEMPERATURE=0.3                 # Niższa = bardziej skupiona
 
-# LLM Summarization Pipeline (NEW v3.1)
-USE_LLM_SUMMARIZATION=True          # Enable pre-clustering summarization
-LLM_SUMMARY_DELAY_SECONDS=0.5       # Rate limiting delay between calls
-LLM_SUMMARY_MAX_CONTENT_CHARS=4000  # Max article content to send to LLM
-LLM_SUMMARY_MAX_RETRIES=3           # Retry attempts for failed calls
-LLM_SUMMARY_BATCH_SIZE=50           # Articles per processing batch
+# Pipeline podsumowań LLM (NOWE v3.1)
+USE_LLM_SUMMARIZATION=True          # Włącz podsumowanie przed klastrowaniem
+LLM_SUMMARY_DELAY_SECONDS=0.5       # Opóźnienie rate limiting między wywołaniami
+LLM_SUMMARY_MAX_CONTENT_CHARS=4000  # Max zawartości artykułu wysyłanej do LLM
+LLM_SUMMARY_MAX_RETRIES=3           # Liczba prób dla nieudanych wywołań
+LLM_SUMMARY_BATCH_SIZE=50           # Artykułów na partię przetwarzania
 
-# Quick Wins (NEW v3.0)
-DEDUP_ENABLED=True                  # Fuzzy deduplication
-DEDUP_SIMILARITY_THRESHOLD=0.85     # Similarity threshold for duplicates
-EMBEDDING_CACHE_ENABLED=True        # Cache embeddings for performance
-EMBEDDING_CACHE_TTL_DAYS=90         # Cache time-to-live
+# Szybkie usprawnienia (NOWE v3.0)
+DEDUP_ENABLED=True                  # Rozmyta deduplikacja
+DEDUP_SIMILARITY_THRESHOLD=0.85     # Próg podobieństwa dla duplikatów
+EMBEDDING_CACHE_ENABLED=True        # Cache embeddingów dla wydajności
+EMBEDDING_CACHE_TTL_DAYS=90         # Czas życia cache
 
-# Data Quality (NEW v3.0)
-FULL_CONTENT_ENABLED=True           # Scrape full article content
-FULL_CONTENT_MIN_RSS_LENGTH=500     # Min RSS length before full scraping
-SOURCE_WEIGHTS_ENABLED=True         # Use source credibility weights
+# Jakość danych (NOWE v3.0)
+FULL_CONTENT_ENABLED=True           # Scrapuj pełną zawartość artykułów
+FULL_CONTENT_MIN_RSS_LENGTH=500     # Min długość RSS przed pełnym scrapingiem
+SOURCE_WEIGHTS_ENABLED=True         # Używaj wag wiarygodności źródeł
 SOURCE_WEIGHTS_CONFIG=data/source_weights.yaml
 
-# Temporal Intelligence (NEW v3.0)
-USE_TEMPORAL_WEIGHTING=True         # Time-weighted embeddings
-TEMPORAL_LAMBDA_DECAY=0.05          # Decay rate (~14-day half-life)
-USE_MULTIPERIOD_ANALYSIS=True       # Multi-period lifecycle analysis
-MULTIPERIOD_WEEKS=2                 # Period length in weeks
-MULTIPERIOD_COUNT=4                 # Number of periods to analyze
+# Inteligencja temporalna (NOWE v3.0)
+USE_TEMPORAL_WEIGHTING=True         # Embeddingi ważone czasowo
+TEMPORAL_LAMBDA_DECAY=0.05          # Współczynnik zaniku (~14-dniowy okres połowicznego rozpadu)
+USE_MULTIPERIOD_ANALYSIS=True       # Analiza cyklu życia wielookresowa
+MULTIPERIOD_WEEKS=2                 # Długość okresu w tygodniach
+MULTIPERIOD_COUNT=4                 # Liczba okresów do analizy
 
-# Advanced Analytics (NEW v3.0)
-USE_TOPIC_MERGING=True              # Automatic topic merging
-TOPIC_MERGE_SIMILARITY=0.85         # Merge threshold
-TOPIC_MERGE_USE_LLM=True            # LLM-validated merging
-USE_CORRELATION_ANALYSIS=True       # Cross-topic correlations
-CORRELATION_MIN_THRESHOLD=0.3       # Min correlation to report
-USE_DRIFT_DETECTION=True            # Semantic drift detection
-DRIFT_THRESHOLD=0.3                 # Min drift score to alert
-DRIFT_LOOKBACK_DAYS=14              # Days to compare for drift
+# Zaawansowana analityka (NOWE v3.0)
+USE_TOPIC_MERGING=True              # Automatyczne łączenie tematów
+TOPIC_MERGE_SIMILARITY=0.85         # Próg łączenia
+TOPIC_MERGE_USE_LLM=True            # Łączenie walidowane przez LLM
+USE_CORRELATION_ANALYSIS=True       # Korelacje między tematami
+CORRELATION_MIN_THRESHOLD=0.3       # Min korelacja do raportowania
+USE_DRIFT_DETECTION=True            # Wykrywanie dryftu semantycznego
+DRIFT_THRESHOLD=0.3                 # Min wynik dryftu dla alertu
+DRIFT_LOOKBACK_DAYS=14              # Dni do porównania dla dryftu
 
-# Trend Detection
-TREND_WINDOW_DAYS=30                # Compare last 30 vs. previous 30 days (legacy)
-TREND_MIN_GROWTH_RATE=0.2           # 20% growth = trending
-TREND_MIN_COUNT=3                   # Minimum articles to be trending
+# Wykrywanie trendów
+TREND_WINDOW_DAYS=30                # Porównaj ostatnie 30 vs. poprzednie 30 dni (legacy)
+TREND_MIN_GROWTH_RATE=0.2           # 20% wzrostu = trendujący
+TREND_MIN_COUNT=3                   # Minimalna liczba artykułów dla trendu
 
-# Output
+# Wyjście
 TREND_OUTPUT_FORMAT=console         # 'console', 'email', 'slack', 'json'
-TREND_MAX_DISPLAY=10                # Max trends to display
+TREND_MAX_DISPLAY=10                # Max trendów do wyświetlenia
 ```
 
-## 📊 Example Output
+## 📊 Przykładowe wyjście
 
-### Console (v3.0)
+### Konsola (v3.0)
 
 ```
 ================================================================================
-🔥 MARKETING & AI TRENDS (8 weeks, multi-period analysis)
-Generated: 2025-12-09 15:30 UTC | Cache Hit Rate: 73% | Duplicates Removed: 15%
+🔥 TRENDY MARKETINGOWE I AI (8 tygodni, analiza wielookresowa)
+Wygenerowano: 2025-12-09 15:30 UTC | Trafienia cache: 73% | Usunięte duplikaty: 15%
 ================================================================================
 
-1. 🔥 Trending · 📈 Growing AI-Powered Content Generation
-   Description: Major platforms integrating generative AI for ad creation
-   Keywords: ai, content, generation, advertising, automation
+1. 🔥 Trendujący · 📈 Rosnący Generowanie treści wspierane przez AI
+   Opis: Główne platformy integrują generatywne AI do tworzenia reklam
+   Słowa kluczowe: ai, treść, generowanie, reklama, automatyzacja
 
-   📊 Metrics:
-   - Articles: 23 (weighted: 31.5) | Growth: +156%
-   - Stage: Growing | Velocity: +0.15
-   - Historical: [3 → 5 → 9 → 23] over 4 periods
+   📊 Metryki:
+   - Artykuły: 23 (ważone: 31.5) | Wzrost: +156%
+   - Etap: Rosnący | Prędkość: +0.15
+   - Historia: [3 → 5 → 9 → 23] przez 4 okresy
 
-   🔗 Related Topics (correlation):
-   - Marketing Automation Tools (0.68 - strong)
-   - Generative AI Ethics (0.54 - moderate)
+   🔗 Powiązane tematy (korelacja):
+   - Narzędzia automatyzacji marketingu (0.68 - silna)
+   - Etyka generatywnego AI (0.54 - umiarkowana)
 
-   ⚠️  Semantic Drift Detected (score: 0.32):
-   "Shifted from basic AI tools to enterprise-level integration platforms"
+   ⚠️  Wykryto dryft semantyczny (wynik: 0.32):
+   "Przesunięcie od podstawowych narzędzi AI do platform integracyjnych klasy enterprise"
    ----------------------------------------------------------------------------
 
-2. 🌟 New · 🌱 Emerging Privacy-First Marketing Strategies
-   Description: Industry shift toward cookieless tracking and consent management
-   Keywords: privacy, cookies, tracking, gdpr, consent
+2. 🌟 Nowy · 🌱 Powstający Strategie marketingowe Privacy-First
+   Opis: Przesunięcie branży w kierunku śledzenia bez cookies i zarządzania zgodami
+   Słowa kluczowe: prywatność, cookies, śledzenie, gdpr, zgoda
 
-   📊 Metrics:
-   - Articles: 12 (weighted: 15.0) | Growth: NEW
-   - Stage: Emerging | Velocity: +0.28
-   - Historical: [0 → 0 → 2 → 12] over 4 periods
+   📊 Metryki:
+   - Artykuły: 12 (ważone: 15.0) | Wzrost: NOWY
+   - Etap: Powstający | Prędkość: +0.28
+   - Historia: [0 → 0 → 2 → 12] przez 4 okresy
 
-   🔗 Related Topics (correlation):
-   - Data Privacy Regulations (0.75 - very strong)
+   🔗 Powiązane tematy (korelacja):
+   - Regulacje dotyczące prywatności danych (0.75 - bardzo silna)
    ----------------------------------------------------------------------------
 
-3. ⬆️ Trending · ⭐ Peak Influencer Marketing ROI
-   Description: Measurement and analytics for influencer campaigns
-   Keywords: influencer, roi, measurement, analytics, performance
+3. ⬆️ Trendujący · ⭐ Szczyt ROI influencer marketingu
+   Opis: Pomiary i analityka dla kampanii influencerskich
+   Słowa kluczowe: influencer, roi, pomiary, analityka, wydajność
 
-   📊 Metrics:
-   - Articles: 18 (weighted: 22.5) | Growth: +88%
-   - Stage: Peak | Velocity: -0.05 (slowing)
-   - Historical: [5 → 8 → 12 → 18] over 4 periods
+   📊 Metryki:
+   - Artykuły: 18 (ważone: 22.5) | Wzrost: +88%
+   - Etap: Szczyt | Prędkość: -0.05 (zwalniający)
+   - Historia: [5 → 8 → 12 → 18] przez 4 okresy
    ----------------------------------------------------------------------------
 
-📈 Summary: 15 topics analyzed | 7 trending | 2 new | 3 declining | 3 topics merged
-⚡ Performance: Embedding cache 73% hit rate | Full scraping: 65% of articles
+📈 Podsumowanie: 15 tematów przeanalizowanych | 7 trendujących | 2 nowe | 3 malejące | 3 tematy połączone
+⚡ Wydajność: Cache embeddingów 73% trafień | Pełny scraping: 65% artykułów
 ```
 
 ### Email (HTML)
 
-Set `TREND_OUTPUT_FORMAT=email` for formatted HTML tables suitable for newsletters.
+Ustaw `TREND_OUTPUT_FORMAT=email` dla sformatowanych tabel HTML odpowiednich do newsletterów.
 
 ### Slack
 
-Set `TREND_OUTPUT_FORMAT=slack` for markdown-formatted messages.
+Ustaw `TREND_OUTPUT_FORMAT=slack` dla wiadomości sformatowanych w markdown.
 
 ### JSON
 
-Set `TREND_OUTPUT_FORMAT=json` for structured data export.
+Ustaw `TREND_OUTPUT_FORMAT=json` dla strukturalnego eksportu danych.
 
-## 🔧 How It Works
+## 🔧 Jak to działa
 
-### Architecture (v3.1)
+### Architektura (v3.1)
 
 ```
-                    RSS Sources
+                    Źródła RSS
                          ↓
-                  Full Content Scraper (trafilatura)
+                  Scraper pełnej treści (trafilatura)
                          ↓
-                  Fuzzy Deduplication (rapidfuzz)
+                  Rozmyta deduplikacja (rapidfuzz)
                          ↓
-                   Save to Database
+                   Zapis do bazy danych
                          ↓
          ┌────────────────────────────────┐
-         │  LLM Summarization (NEW v3.1)  │ ← GPT-4o-mini
+         │  Podsumowanie LLM (NOWE v3.1)  │ ← GPT-4o-mini
          ├────────────────────────────────┤
-         │ • 2-3 sentence summaries       │
-         │ • Trend relevance filtering    │
-         │ • Filters: jobs, events, PR    │
+         │ • 2-3 zdaniowe podsumowania    │
+         │ • Filtrowanie istotności       │
+         │ • Filtry: praca, wydarzenia, PR│
          └────────────────────────────────┘
                          ↓
               ┌──────────────────────┐
-              │  BERTopic Clustering │
+              │  Klastrowanie BERTopic│
               ├──────────────────────┤
-              │ • Uses SUMMARY text  │ ← Not full content!
+              │ • Używa tekst PODSUMOWANIA │ ← Nie pełnej treści!
               │ • Embedding (cache)  │
-              │ • Temporal weighting │
+              │ • Wagi temporalne    │
               │ • UMAP + HDBSCAN     │
               │ • c-TF-IDF           │
               └──────────────────────┘
                          ↓
               ┌──────────────────────┐
-              │   Topic Merging      │ ← LLM validates duplicates
+              │   Łączenie tematów   │ ← LLM waliduje duplikaty
               └──────────────────────┘
                          ↓
               ┌──────────────────────┐
-              │  LLM Analysis        │ ← Validates + names trends
+              │  Analiza LLM         │ ← Waliduje + nazywa trendy
               │  (GPT-4o-mini)       │
               └──────────────────────┘
                          ↓
               ┌──────────────────────┐
-              │  Database Storage    │
-              │  + Trend Snapshots   │
+              │  Zapis do bazy       │
+              │  + Snapshoty trendów │
               └──────────────────────┘
                          ↓
               ┌──────────────────────┐
-              │  Multi-Period        │ ← Lifecycle analysis
-              │  Trend Detector      │   (4 periods of 2 weeks)
+              │  Wielookresowy       │ ← Analiza cyklu życia
+              │  detektor trendów    │   (4 okresy po 2 tygodnie)
               └──────────────────────┘
                          ↓
          ┌────────────────────────────────┐
-         │   Advanced Analytics           │
+         │   Zaawansowana analityka       │
          ├────────────────────────────────┤
-         │ • Correlation analysis         │
-         │ • Semantic drift detection     │
-         │ • Historical comparison        │
+         │ • Analiza korelacji            │
+         │ • Wykrywanie dryftu semantycznego│
+         │ • Porównanie historyczne       │
          └────────────────────────────────┘
                          ↓
          ┌────────────────────────────────┐
-         │   Formatters                   │
-         │   (Console/Email/Slack/JSON)   │
+         │   Formatery                    │
+         │   (Konsola/Email/Slack/JSON)   │
          └────────────────────────────────┘
 ```
 
-### LLM Summarization Pipeline (NEW v3.1)
+### Pipeline podsumowań LLM (NOWE v3.1)
 
-**Why summarization?**
-- BERTopic's embedding model (MiniLM) has a **128 token limit**
-- Full articles (500-2000 words) get truncated → loss of meaning
-- Short summaries (2-3 sentences) capture the essence within the limit
+**Dlaczego podsumowanie?**
+- Model embeddingów BERTopic (MiniLM) ma **limit 128 tokenów**
+- Pełne artykuły (500-2000 słów) są obcinane → utrata znaczenia
+- Krótkie podsumowania (2-3 zdania) oddają istotę w ramach limitu
 
-**Process:**
-1. **Article Input**: Full content (up to 4000 chars) sent to GPT-4o-mini
-2. **Summary Generation**: LLM creates 2-3 sentence trend-focused summary
-3. **Relevance Check**: LLM determines if article is trend-relevant
-4. **Filtering**: Non-trend content marked as `is_trend_relevant=False`
+**Proces:**
+1. **Wejście artykułu**: Pełna treść (do 4000 znaków) wysłana do GPT-4o-mini
+2. **Generowanie podsumowania**: LLM tworzy 2-3 zdaniowe podsumowanie skupione na trendach
+3. **Sprawdzenie istotności**: LLM określa czy artykuł jest istotny dla trendów
+4. **Filtrowanie**: Treści nie-trendowe oznaczane jako `is_trend_relevant=False`
 
-**What gets filtered out:**
-- Job postings / hiring announcements
-- Event invitations / conference announcements
-- Press releases about company financials (without industry implications)
-- Product documentation / how-to guides (without trend context)
-- Purely promotional content
+**Co jest odfiltrowywane:**
+- Oferty pracy / ogłoszenia o rekrutacji
+- Zaproszenia na wydarzenia / ogłoszenia konferencji
+- Komunikaty prasowe o finansach firmy (bez implikacji dla branży)
+- Dokumentacja produktów / poradniki (bez kontekstu trendów)
+- Czysto promocyjna treść
 
-**Database fields:**
+**Pola bazy danych:**
 ```sql
 ALTER TABLE articles ADD COLUMN summary TEXT;
 ALTER TABLE articles ADD COLUMN is_trend_relevant BOOLEAN DEFAULT TRUE;
 ALTER TABLE articles ADD COLUMN summary_generated_at DATETIME;
 ```
 
-### Hybrid BERTopic + LLM Pipeline
+### Hybrydowy pipeline BERTopic + LLM
 
-1. **Summarization (NEW)**: LLM generates 2-3 sentence summaries, filters non-trends
-2. **Embedding**: Convert **summaries** (not full articles) to semantic vectors
-3. **Dimensionality Reduction**: UMAP to 5 dimensions
-4. **Clustering**: HDBSCAN to find topic clusters
-5. **Representation**: c-TF-IDF to extract topic keywords
-6. **LLM Validation**: GPT-4o-mini validates trends and generates natural language names
-7. **Filtering**: Only real trends (not company news) are saved
+1. **Podsumowanie (NOWE)**: LLM generuje 2-3 zdaniowe podsumowania, filtruje nie-trendy
+2. **Embedding**: Konwertuj **podsumowania** (nie pełne artykuły) na wektory semantyczne
+3. **Redukcja wymiarowości**: UMAP do 5 wymiarów
+4. **Klastrowanie**: HDBSCAN do znajdowania klastrów tematycznych
+5. **Reprezentacja**: c-TF-IDF do ekstrakcji słów kluczowych tematów
+6. **Walidacja LLM**: GPT-4o-mini waliduje trendy i generuje nazwy w języku naturalnym
+7. **Filtrowanie**: Tylko prawdziwe trendy (nie wiadomości firmowe) są zapisywane
 
-### Trend Detection
+### Wykrywanie trendów
 
-- Compare topic frequencies: **last 30 days** vs. **previous 30 days**
-- Calculate growth rate: `(current - previous) / previous`
-- Mark as **trending** if growth ≥ 20%
-- Mark as **new** if topic didn't exist before
+- Porównuj częstotliwości tematów: **ostatnie 30 dni** vs. **poprzednie 30 dni**
+- Oblicz współczynnik wzrostu: `(obecny - poprzedni) / poprzedni`
+- Oznacz jako **trendujący** jeśli wzrost ≥ 20%
+- Oznacz jako **nowy** jeśli temat nie istniał wcześniej
 
-## 📚 Documentation
+## 📚 Dokumentacja
 
-For detailed technical documentation, see [IMPLEMENTATION.md](IMPLEMENTATION.md):
-- Problem statement (why we replaced keywords with topics)
-- Architecture deep-dive
-- Database schema
-- Configuration options
-- Performance considerations
-- Future enhancements
+Szczegółowa dokumentacja techniczna w [IMPLEMENTATION.md](IMPLEMENTATION.md):
+- Opis problemu (dlaczego zamieniliśmy słowa kluczowe na tematy)
+- Szczegółowy opis architektury
+- Schemat bazy danych
+- Opcje konfiguracji
+- Rozważania dotyczące wydajności
+- Przyszłe usprawnienia
 
-## 🧪 Testing
+## 🧪 Testowanie
 
-### Basic Testing
+### Podstawowe testowanie
 
 ```bash
-# Run on existing data (if database populated)
+# Uruchom na istniejących danych (jeśli baza danych wypełniona)
 python main.py --once
 
-# Re-run topic modeling
+# Ponownie uruchom modelowanie tematów
 python main.py --remodel
 
-# Debug LLM decisions (shows full prompts and responses)
+# Debuguj decyzje LLM (pokazuje pełne prompty i odpowiedzi)
 python main.py --remodel --debug
 
-# Check database
+# Sprawdź bazę danych
 sqlite3 data/trends.db "SELECT * FROM topics LIMIT 5;"
 ```
 
-### Testing v3.1 Features (Summarization)
+### Testowanie funkcji v3.1 (Podsumowanie)
 
 ```bash
-# Run summarization only (generates summaries for all articles without them)
+# Uruchom tylko podsumowanie (generuje podsumowania dla wszystkich artykułów bez nich)
 python main.py --summarize
-# Check logs for: "Summarized: X articles, Filtered: Y articles"
+# Sprawdź logi dla: "Summarized: X articles, Filtered: Y articles"
 
-# Run topic modeling only (uses existing summaries, skips scraping)
+# Uruchom tylko modelowanie tematów (używa istniejących podsumowań, pomija scraping)
 python main.py --topics
-# Check logs for: "Using LLM summaries for X/Y articles"
+# Sprawdź logi dla: "Using LLM summaries for X/Y articles"
 
-# Check summaries in database
+# Sprawdź podsumowania w bazie danych
 sqlite3 data/trends.db "SELECT id, title, summary, is_trend_relevant FROM articles LIMIT 5;"
 
-# Check filtered articles (not trend-relevant)
+# Sprawdź odfiltrowane artykuły (nieistotne dla trendów)
 sqlite3 data/trends.db "SELECT COUNT(*) FROM articles WHERE is_trend_relevant = 0;"
 
-# Check articles with summaries
+# Sprawdź artykuły z podsumowaniami
 sqlite3 data/trends.db "SELECT COUNT(*) FROM articles WHERE summary IS NOT NULL;"
 ```
 
-### Testing v3.0 Features
+### Testowanie funkcji v3.0
 
 ```bash
-# Test deduplication
+# Test deduplikacji
 python main.py --once
-# Check logs for: "Deduplication metrics: X duplicates removed"
+# Sprawdź logi dla: "Deduplication metrics: X duplicates removed"
 
-# Test embedding cache (run twice)
-python main.py --remodel  # First run (cold cache)
-python main.py --remodel  # Second run (should be 50-70% faster)
-# Check logs for: "Embedding cache: X/Y hits (Z% hit rate)"
+# Test cache embeddingów (uruchom dwa razy)
+python main.py --remodel  # Pierwsze uruchomienie (zimny cache)
+python main.py --remodel  # Drugie uruchomienie (powinno być 50-70% szybsze)
+# Sprawdź logi dla: "Embedding cache: X/Y hits (Z% hit rate)"
 
-# Test full content scraping
+# Test scrapingu pełnej treści
 python main.py --once
-# Check logs for: "Full content scraping complete: X scraped, Y RSS used"
+# Sprawdź logi dla: "Full content scraping complete: X scraped, Y RSS used"
 
-# Test source weighting
+# Test wag źródeł
 sqlite3 data/trends.db "SELECT name, url, credibility_weight FROM sources;"
-# Verify weights loaded from source_weights.yaml
+# Zweryfikuj wagi załadowane z source_weights.yaml
 
-# Test lifecycle analysis
+# Test analizy cyklu życia
 python main.py --once
-# Output should show stages: 🌱 Emerging, 📈 Growing, ⭐ Peak, etc.
+# Wyjście powinno pokazywać etapy: 🌱 Powstający, 📈 Rosnący, ⭐ Szczyt, itp.
 
-# Test topic merging (need multiple similar topics)
+# Test łączenia tematów (potrzeba wielu podobnych tematów)
 python main.py --once
-# Check logs for: "Merged X topic pairs"
+# Sprawdź logi dla: "Merged X topic pairs"
 
-# Test correlation analysis (need multiple trending topics)
+# Test analizy korelacji (potrzeba wielu trendujących tematów)
 python main.py --once
-# Output should show "Related Topics" section for each trend
+# Wyjście powinno pokazywać sekcję "Powiązane tematy" dla każdego trendu
 
-# Test semantic drift (need historical data - run for 2+ weeks)
+# Test dryftu semantycznego (potrzeba danych historycznych - uruchom przez 2+ tygodnie)
 python main.py --once
-# Check logs for: "Detected semantic drift in X topics"
-# Output shows: "⚠️ Semantic Drift Detected"
+# Sprawdź logi dla: "Detected semantic drift in X topics"
+# Wyjście pokazuje: "⚠️ Wykryto dryft semantyczny"
 
-# View all snapshots for a topic
+# Zobacz wszystkie snapshoty dla tematu
 sqlite3 data/trends.db "SELECT * FROM trend_snapshots WHERE topic_id=1 ORDER BY snapshot_date DESC;"
 
-# View embedding cache statistics
+# Zobacz statystyki cache embeddingów
 sqlite3 data/trends.db "SELECT COUNT(*), MIN(created_at), MAX(last_accessed) FROM embedding_cache;"
 ```
 
-### Debugging LLM Decisions
+### Debugowanie decyzji LLM
 
-To understand why topics were classified as trends or rejected:
+Aby zrozumieć dlaczego tematy zostały sklasyfikowane jako trendy lub odrzucone:
 
-1. **Enable debug mode:**
+1. **Włącz tryb debug:**
    ```bash
    python main.py --remodel --debug
    ```
 
-2. **View formatted analysis:**
+2. **Zobacz sformatowaną analizę:**
    ```bash
    ./debug_llm_decisions.sh
    ```
 
-   This shows:
-   - Articles sent to LLM for each topic
-   - BERTopic keywords
-   - Full LLM response with reasoning
-   - Summary of accepted/rejected trends
+   To pokazuje:
+   - Artykuły wysłane do LLM dla każdego tematu
+   - Słowa kluczowe BERTopic
+   - Pełną odpowiedź LLM z uzasadnieniem
+   - Podsumowanie zaakceptowanych/odrzuconych trendów
 
-3. **Check raw logs:**
+3. **Sprawdź surowe logi:**
    ```bash
    tail -f logs/ad_trends_$(date +%Y-%m-%d).log
    ```
 
-📖 **Full debugging guide:** See [DEBUG_GUIDE.md](DEBUG_GUIDE.md) for detailed examples and troubleshooting.
+📖 **Pełny przewodnik debugowania:** Zobacz [DEBUG_GUIDE.md](DEBUG_GUIDE.md) dla szczegółowych przykładów i rozwiązywania problemów.
 
-## 🛠️ Development
+## 🛠️ Rozwój
 
-### Adding New Sources
+### Dodawanie nowych źródeł
 
-Edit [data/sources.yaml](data/sources.yaml):
+Edytuj [data/sources.yaml](data/sources.yaml):
 
 ```yaml
 sources:
-  - name: "Your Source Name"
+  - name: "Nazwa twojego źródła"
     url: "https://example.com/rss"
     type: rss
 ```
 
-Then reload:
+Następnie przeładuj:
 ```bash
 python main.py --init-sources
 ```
 
-### Configuring Source Weights (NEW v3.0)
+### Konfigurowanie wag źródeł (NOWE v3.0)
 
-Edit [data/source_weights.yaml](data/source_weights.yaml) to set credibility weights:
+Edytuj [data/source_weights.yaml](data/source_weights.yaml) aby ustawić wagi wiarygodności:
 
 ```yaml
-# Default weight for unlisted sources
+# Domyślna waga dla niewymienionych źródeł
 default_weight: 1.0
 
-# High credibility sources (weight: 1.5)
+# Źródła o wysokiej wiarygodności (waga: 1.5)
 high_credibility:
   - adage.com
   - marketingweek.com
   - thinkwithgoogle.com
   weight: 1.5
 
-# Medium credibility (weight: 1.0)
+# Średnia wiarygodność (waga: 1.0)
 medium_credibility:
   - contentmarketinginstitute.com
   weight: 1.0
 
-# Low credibility (weight: 0.5)
+# Niska wiarygodność (waga: 0.5)
 low_credibility:
   - content-farm-example.com
   weight: 0.5
 
-# Blacklist (weight: 0 - filtered out)
+# Czarna lista (waga: 0 - odfiltrowane)
 blacklist:
   - spam-site.com
   weight: 0
 ```
 
-**How it works:**
-- Higher weights = more influence on trending topics
-- Blacklisted sources are completely filtered out
-- Weighted counts shown in output: `Articles: 23 (weighted: 31.5)`
+**Jak to działa:**
+- Wyższe wagi = większy wpływ na trendujące tematy
+- Źródła z czarnej listy są całkowicie odfiltrowane
+- Ważone liczby pokazane w wyjściu: `Artykuły: 23 (ważone: 31.5)`
 
-### Customizing Topic Modeling
+### Dostosowywanie modelowania tematów
 
-Edit parameters in `src/config.py`:
+Edytuj parametry w `src/config.py`:
 
-- `TOPIC_MIN_TOPIC_SIZE`: Smaller = more granular topics
+- `TOPIC_MIN_TOPIC_SIZE`: Mniejsza = bardziej szczegółowe tematy
 - `TOPIC_MODEL_LANGUAGE`:
-  - `'multilingual'`: Best for mixed sources (default)
-  - `'en'`: Faster for English-only
-  - `'pl'`: Optimized for Polish
+  - `'multilingual'`: Najlepsze dla mieszanych źródeł (domyślne)
+  - `'en'`: Szybsze tylko dla angielskiego
+  - `'pl'`: Zoptymalizowane dla polskiego
 
-### Output Formats
+### Formaty wyjściowe
 
-Create custom formatters in `src/formatters/trend_summarizer.py`:
+Twórz własne formatery w `src/formatters/trend_summarizer.py`:
 
 ```python
 def format_for_custom(trends, **kwargs):
-    # Your custom formatting logic
+    # Twoja własna logika formatowania
     return formatted_output
 ```
 
-## 📈 Performance & Metrics (v3.0)
+## 📈 Wydajność i metryki (v3.0)
 
-### Expected Improvements
+### Oczekiwane usprawnienia
 
-**Performance:**
-- **First Run**: Normal speed (establishes cache)
-- **Second Run**: 50-70% faster (embedding cache)
-- **Third+ Runs**: Consistent fast performance
+**Wydajność:**
+- **Pierwsze uruchomienie**: Normalna prędkość (budowanie cache)
+- **Drugie uruchomienie**: 50-70% szybsze (cache embeddingów)
+- **Trzecie+ uruchomienia**: Stała wysoka wydajność
 
-**Data Quality:**
-- **Deduplication**: 10-20% reduction in duplicate articles
-- **Full Content**: 65-80% of articles enhanced with complete text
-- **Source Weighting**: High-quality sources influence trends more
+**Jakość danych:**
+- **Deduplikacja**: 10-20% redukcja duplikatów artykułów
+- **Pełna treść**: 65-80% artykułów wzbogaconych o kompletny tekst
+- **Wagi źródeł**: Wysokiej jakości źródła wpływają bardziej na trendy
 
-**Intelligence:**
-- **Lifecycle Classification**: 100% of trends categorized (emerging/growing/peak/declining)
-- **Related Topics**: Average 2-4 correlations per trending topic
-- **Drift Detection**: Typically 5-10% of topics show significant evolution
+**Inteligencja:**
+- **Klasyfikacja cyklu życia**: 100% trendów skategoryzowanych (powstający/rosnący/szczyt/malejący)
+- **Powiązane tematy**: Średnio 2-4 korelacje na trendujący temat
+- **Wykrywanie dryftu**: Typowo 5-10% tematów wykazuje znaczącą ewolucję
 
-### Monitoring
+### Monitorowanie
 
-Check logs for performance metrics:
+Sprawdzaj logi dla metryk wydajności:
 ```bash
 tail -f logs/ad_trends_*.log | grep -E "(cache|dedup|merge|correlation|drift)"
 ```
 
-Example metrics output:
+Przykładowe wyjście metryk:
 ```
 Embedding cache: 730/1000 hits (73% hit rate)
 Deduplication: 150/1000 removed (15% reduction)
@@ -741,123 +741,123 @@ Correlation analysis: 45 pairs, 8 strong correlations
 Semantic drift: 33 topics checked, 3 drifts detected
 ```
 
-## 🐛 Troubleshooting
+## 🐛 Rozwiązywanie problemów
 
-### Issue: Summarization not running (v3.1)
-- Check `USE_LLM_SUMMARIZATION=True` in config
-- Verify `OPENAI_API_KEY` is set in `.env` file
-- Check logs for: "ArticleSummarizer initialized with model: gpt-4o-mini"
-- Run standalone: `python main.py --summarize`
+### Problem: Podsumowanie się nie uruchamia (v3.1)
+- Sprawdź `USE_LLM_SUMMARIZATION=True` w konfiguracji
+- Zweryfikuj czy `OPENAI_API_KEY` jest ustawiony w pliku `.env`
+- Sprawdź logi dla: "ArticleSummarizer initialized with model: gpt-4o-mini"
+- Uruchom samodzielnie: `python main.py --summarize`
 
-### Issue: Too many articles filtered as "not trend-relevant" (v3.1)
-- Review the filtered articles: `sqlite3 data/trends.db "SELECT title FROM articles WHERE is_trend_relevant = 0;"`
-- The LLM may be too aggressive - check if legitimate trend articles are being filtered
-- Consider adjusting the prompt in `src/processors/article_summarizer.py`
+### Problem: Zbyt wiele artykułów odfiltrowanych jako "nieistotne dla trendów" (v3.1)
+- Przejrzyj odfiltrowane artykuły: `sqlite3 data/trends.db "SELECT title FROM articles WHERE is_trend_relevant = 0;"`
+- LLM może być zbyt agresywny - sprawdź czy prawdziwe artykuły o trendach są filtrowane
+- Rozważ dostosowanie promptu w `src/processors/article_summarizer.py`
 
-### Issue: BERTopic "max_df corresponds to < documents than min_df" error
-- This happens when summaries are too short/similar
-- The system auto-retries with relaxed vectorizer settings
-- If persistent, check summary quality in database
+### Problem: Błąd BERTopic "max_df corresponds to < documents than min_df"
+- To się zdarza gdy podsumowania są zbyt krótkie/podobne
+- System automatycznie ponawia próbę ze złagodzonymi ustawieniami vectorizera
+- Jeśli się powtarza, sprawdź jakość podsumowań w bazie danych
 
-### Issue: No topics detected
-- Check `MIN_ARTICLE_LENGTH` - may be filtering too many articles
-- Lower `TOPIC_MIN_TOPIC_SIZE` to allow smaller topics
-- Verify articles are being scraped: `sqlite3 data/trends.db "SELECT COUNT(*) FROM articles;"`
-- Check if articles have summaries: `sqlite3 data/trends.db "SELECT COUNT(*) FROM articles WHERE summary IS NOT NULL;"`
+### Problem: Brak wykrytych tematów
+- Sprawdź `MIN_ARTICLE_LENGTH` - może filtrować zbyt wiele artykułów
+- Zmniejsz `TOPIC_MIN_TOPIC_SIZE` aby pozwolić na mniejsze tematy
+- Zweryfikuj czy artykuły są scrapowane: `sqlite3 data/trends.db "SELECT COUNT(*) FROM articles;"`
+- Sprawdź czy artykuły mają podsumowania: `sqlite3 data/trends.db "SELECT COUNT(*) FROM articles WHERE summary IS NOT NULL;"`
 
-### Issue: Poor topic quality
-- Increase `TOPIC_MIN_TOPIC_SIZE` for broader topics
-- Use language-specific model (`'en'` or `'pl'`) instead of multilingual
-- Run `--remodel` after changing parameters
+### Problem: Słaba jakość tematów
+- Zwiększ `TOPIC_MIN_TOPIC_SIZE` dla szerszych tematów
+- Użyj modelu specyficznego dla języka (`'en'` lub `'pl'`) zamiast multilingual
+- Uruchom `--remodel` po zmianie parametrów
 
-### Issue: Too many "new" topics
-- Increase `TREND_WINDOW_DAYS` for longer comparison window
-- Increase `TREND_MIN_COUNT` to filter low-frequency topics
+### Problem: Zbyt wiele "nowych" tematów
+- Zwiększ `TREND_WINDOW_DAYS` dla dłuższego okna porównawczego
+- Zwiększ `TREND_MIN_COUNT` aby odfiltrować tematy o niskiej częstotliwości
 
-### Issue: Slow performance (v3.0)
-- **First run is slow**: Normal - building embedding cache
-- **Still slow on second run**: Check `EMBEDDING_CACHE_ENABLED=True` in config
-- **Cache not working**: Check logs for cache hit rate, may need to clear old cache
-- **Full scraping too slow**: Reduce `FULL_CONTENT_MAX_WORKERS` or disable with `FULL_CONTENT_ENABLED=False`
+### Problem: Wolna wydajność (v3.0)
+- **Pierwsze uruchomienie jest wolne**: Normalne - budowanie cache embeddingów
+- **Wciąż wolno przy drugim uruchomieniu**: Sprawdź `EMBEDDING_CACHE_ENABLED=True` w konfiguracji
+- **Cache nie działa**: Sprawdź logi dla trafień cache, może trzeba wyczyścić stary cache
+- **Pełny scraping zbyt wolny**: Zmniejsz `FULL_CONTENT_MAX_WORKERS` lub wyłącz `FULL_CONTENT_ENABLED=False`
 
-### Issue: Too many/few topic merges (v3.0)
-- **Too aggressive**: Increase `TOPIC_MERGE_SIMILARITY` (default: 0.85)
-- **Not merging duplicates**: Lower threshold or check LLM is enabled (`TOPIC_MERGE_USE_LLM=True`)
-- **Disable merging**: Set `USE_TOPIC_MERGING=False`
+### Problem: Zbyt wiele/mało połączeń tematów (v3.0)
+- **Zbyt agresywne**: Zwiększ `TOPIC_MERGE_SIMILARITY` (domyślnie: 0.85)
+- **Nie łączy duplikatów**: Zmniejsz próg lub sprawdź czy LLM jest włączony (`TOPIC_MERGE_USE_LLM=True`)
+- **Wyłącz łączenie**: Ustaw `USE_TOPIC_MERGING=False`
 
-### Issue: No correlations detected (v3.0)
-- Lower `CORRELATION_MIN_THRESHOLD` (default: 0.3)
-- Ensure you have enough trending topics (need at least 2)
-- Check that centroids are being computed (look for "Computing centroid" in logs)
+### Problem: Brak wykrytych korelacji (v3.0)
+- Zmniejsz `CORRELATION_MIN_THRESHOLD` (domyślnie: 0.3)
+- Upewnij się że masz wystarczająco trendujących tematów (potrzeba minimum 2)
+- Sprawdź czy centroidy są obliczane (szukaj "Computing centroid" w logach)
 
-### Issue: No drift detected (v3.0)
-- Topics may be stable (good thing!)
-- Lower `DRIFT_THRESHOLD` for more sensitivity (default: 0.3)
-- Increase `DRIFT_LOOKBACK_DAYS` for longer comparison window
-- Ensure historical snapshots exist (run system for 2+ weeks)
+### Problem: Brak wykrytego dryftu (v3.0)
+- Tematy mogą być stabilne (to dobrze!)
+- Zmniejsz `DRIFT_THRESHOLD` dla większej czułości (domyślnie: 0.3)
+- Zwiększ `DRIFT_LOOKBACK_DAYS` dla dłuższego okna porównawczego
+- Upewnij się że istnieją historyczne snapshoty (uruchom system przez 2+ tygodnie)
 
-## 📦 Requirements
+## 📦 Wymagania
 
 - Python 3.9+
-- ~2GB RAM for topic modeling (100-200 articles)
-- ~500MB disk space (including models)
+- ~2GB RAM dla modelowania tematów (100-200 artykułów)
+- ~500MB miejsca na dysku (włącznie z modelami)
 
-### Key Dependencies
+### Główne zależności
 
-- `bertopic>=0.16.0` - Topic modeling
-- `sentence-transformers>=2.2.0` - Semantic embeddings
-- `umap-learn>=0.5.5` - Dimensionality reduction
-- `hdbscan>=0.8.33` - Clustering
-- `scikit-learn>=1.3.0` - Utilities
-- `openai>=1.0.0` - LLM enhancement (v2.1)
-- `rapidfuzz>=3.0.0` - Fuzzy deduplication (v3.0)
-- `trafilatura>=1.6.0` - Full content extraction (v3.0)
+- `bertopic>=0.16.0` - Modelowanie tematów
+- `sentence-transformers>=2.2.0` - Embeddingi semantyczne
+- `umap-learn>=0.5.5` - Redukcja wymiarowości
+- `hdbscan>=0.8.33` - Klastrowanie
+- `scikit-learn>=1.3.0` - Narzędzia
+- `openai>=1.0.0` - Wzmocnienie LLM (v2.1)
+- `rapidfuzz>=3.0.0` - Rozmyta deduplikacja (v3.0)
+- `trafilatura>=1.6.0` - Ekstrakcja pełnej treści (v3.0)
 
-See [requirements.txt](requirements.txt) for complete list.
+Zobacz [requirements.txt](requirements.txt) dla pełnej listy.
 
-## 📝 License
+## 📝 Licencja
 
-[Your License]
+[Twoja licencja]
 
-## 🤝 Contributing
+## 🤝 Współpraca
 
-Contributions welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request
+Wkład mile widziany! Proszę:
+1. Zforkuj repozytorium
+2. Utwórz branch dla funkcji
+3. Wyślij pull request
 
-## 📧 Contact
+## 📧 Kontakt
 
-- Issues: [GitHub Issues]
-- Documentation: See [IMPLEMENTATION.md](IMPLEMENTATION.md)
-
----
-
-## 🎉 Version History
-
-- **v3.1** (January 22, 2026) - LLM Summarization Pipeline: Pre-clustering article summarization for dramatically improved clustering quality
-- **v3.0** (January 21, 2026) - Advanced Intelligence: Multi-period analysis, temporal weighting, topic merging, correlation analysis, drift detection
-- **v2.1** (December 9, 2025) - LLM Enhancement: GPT-4o-mini integration for better trend identification
-- **v2.0** (November 2025) - Major Refactor: BERTopic semantic topic modeling
-- **v1.0** (October 2025) - Initial Release: Keyword-based trend detection
+- Problemy: [GitHub Issues]
+- Dokumentacja: Zobacz [IMPLEMENTATION.md](IMPLEMENTATION.md)
 
 ---
 
-**Version**: 3.1 (LLM Summarization Pipeline)
-**Last Updated**: January 22, 2026
-**Status**: Production Ready ✅
+## 🎉 Historia wersji
 
-**Key Metrics v3.1**:
-- LLM-generated summaries optimize 128-token embedding limit
-- Auto-filters non-trend content (jobs, events, press releases)
-- New CLI commands: `--summarize`, `--topics`
-- 3 new database fields: `summary`, `is_trend_relevant`, `summary_generated_at`
-- 5 new configuration parameters
+- **v3.1** (22 stycznia 2026) - Pipeline podsumowań LLM: Podsumowanie artykułów przed klastrowaniem dla dramatycznie ulepszonej jakości klastrowania
+- **v3.0** (21 stycznia 2026) - Zaawansowana inteligencja: Analiza wielookresowa, wagi temporalne, łączenie tematów, analiza korelacji, wykrywanie dryftu
+- **v2.1** (9 grudnia 2025) - Wzmocnienie LLM: Integracja GPT-4o-mini dla lepszej identyfikacji trendów
+- **v2.0** (listopad 2025) - Główna przebudowa: Semantyczne modelowanie tematów BERTopic
+- **v1.0** (październik 2025) - Pierwsze wydanie: Wykrywanie trendów oparte na słowach kluczowych
 
-**Key Metrics v3.0**:
-- 12 new features across 4 phases
-- 9 new modules (2,391 lines of code)
-- 2 new database tables
-- 24 new configuration parameters
-- 50-70% performance improvement on reruns
-- 10-20% reduction in duplicate articles
+---
+
+**Wersja**: 3.1 (Pipeline podsumowań LLM)
+**Ostatnia aktualizacja**: 22 stycznia 2026
+**Status**: Gotowe do produkcji ✅
+
+**Kluczowe metryki v3.1**:
+- Podsumowania generowane przez LLM optymalizują limit 128 tokenów embeddingów
+- Auto-filtrowanie treści nie-trendowych (praca, wydarzenia, komunikaty prasowe)
+- Nowe komendy CLI: `--summarize`, `--topics`
+- 3 nowe pola bazy danych: `summary`, `is_trend_relevant`, `summary_generated_at`
+- 5 nowych parametrów konfiguracyjnych
+
+**Kluczowe metryki v3.0**:
+- 12 nowych funkcji w 4 fazach
+- 9 nowych modułów (2391 linii kodu)
+- 2 nowe tabele bazy danych
+- 24 nowe parametry konfiguracyjne
+- 50-70% poprawa wydajności przy ponownych uruchomieniach
+- 10-20% redukcja duplikatów artykułów
