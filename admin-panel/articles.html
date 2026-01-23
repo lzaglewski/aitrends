@@ -27,6 +27,19 @@
             <p>Przeglądaj i wyszukuj zebrane artykuły</p>
         </div>
 
+        <!-- Topic Filter Banner (shown when filtering by topic) -->
+        <div id="topic-filter-banner" class="card" style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+            <div class="flex" style="justify-content: space-between; align-items: center;">
+                <div>
+                    <strong>📊 Filtrowanie po temacie:</strong>
+                    <span id="topic-filter-name"></span>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="clearTopicFilter()">
+                    ✕ Wyczyść filtr
+                </button>
+            </div>
+        </div>
+
         <!-- Filters Card -->
         <div class="card">
             <div class="card-header">
@@ -110,6 +123,9 @@
 
     <script src="js/api.js"></script>
     <script>
+        // Current topic filter (set from URL)
+        let currentTopicId = null;
+
         // Format date
         function formatDate(dateString) {
             if (!dateString) return 'Brak daty';
@@ -135,6 +151,15 @@
             }
         }
 
+        // Clear topic filter
+        function clearTopicFilter() {
+            currentTopicId = null;
+            document.getElementById('topic-filter-banner').style.display = 'none';
+            // Update URL without topic_id
+            window.history.replaceState({}, '', 'articles.html');
+            loadArticles();
+        }
+
         // Load articles
         async function loadArticles() {
             const tbody = document.getElementById('articles-tbody');
@@ -153,9 +178,14 @@
                     limit: parseInt(limit)
                 };
 
-                if (keyword) params.keyword = keyword;
-                if (sourceId) params.source_id = parseInt(sourceId);
-                if (days) params.days = parseInt(days);
+                // Topic filter takes priority
+                if (currentTopicId) {
+                    params.topic_id = currentTopicId;
+                } else {
+                    if (keyword) params.keyword = keyword;
+                    if (sourceId) params.source_id = parseInt(sourceId);
+                    if (days) params.days = parseInt(days);
+                }
 
                 const articles = await api.getArticles(params);
 
@@ -208,6 +238,25 @@
         // Load data on page load
         document.addEventListener('DOMContentLoaded', () => {
             loadSourcesFilter();
+
+            // Check for URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            const topicIdParam = urlParams.get('topic_id');
+            const topicNameParam = urlParams.get('topic_name');
+            const keywordParam = urlParams.get('keyword');
+
+            // Topic filter takes priority
+            if (topicIdParam) {
+                currentTopicId = parseInt(topicIdParam);
+                document.getElementById('topic-filter-banner').style.display = 'block';
+                document.getElementById('topic-filter-name').textContent = topicNameParam || `Topic #${topicIdParam}`;
+                // Clear days filter to show all articles
+                document.getElementById('days-filter').value = '';
+            } else if (keywordParam) {
+                document.getElementById('keyword-filter').value = keywordParam;
+                document.getElementById('days-filter').value = '';
+            }
+
             loadArticles();
         });
 

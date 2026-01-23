@@ -3,17 +3,59 @@
 ## 🔄 Pełny pipeline
 
 ```
-RSS Sources → Scrape Articles → Clean Text → BERTopic Clustering
-                                                      ↓
-                                              LLM Analysis (GPT-4o-mini)
-                                                      ↓
-                                              Validated Trends
-                                                      ↓
-                                              Database Storage
-                                                      ↓
-                                    Trend Detector (Compare Periods)
-                                                      ↓
-                                    Formatters (Console/Email/Slack)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           TREND DETECTION PIPELINE                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────┐
+    │   RSS Sources   │  ← KROK 1: Pobieranie
+    │  (50 art/źródło)│
+    └────────┬────────┘
+             │
+             ▼
+    ┌─────────────────┐
+    │   Clean Text    │  ← KROK 2: Czyszczenie
+    │ (min 50 znaków) │
+    └────────┬────────┘
+             │
+             ▼
+    ┌─────────────────────────────────────────────┐
+    │            BERTopic Clustering              │  ← KROK 3: Grupowanie semantyczne
+    │  ┌───────────────────────────────────────┐  │
+    │  │ SentenceTransformer (tekst → 384D)    │  │  Embedding: "rozumienie" tekstu
+    │  │            ↓                          │  │
+    │  │ UMAP (384D → 5D)                      │  │  Redukcja: kompresja wymiarów
+    │  │            ↓                          │  │
+    │  │ HDBSCAN (5D → grupy)                  │  │  Clustering: znajdowanie grup
+    │  │            ↓                          │  │
+    │  │ c-TF-IDF (grupy → słowa kluczowe)     │  │  Reprezentacja: nazwanie tematów
+    │  └───────────────────────────────────────┘  │
+    └────────────────────┬────────────────────────┘
+                         │
+                         ▼
+    ┌─────────────────────┐
+    │   Named Entity      │  ← KROK 4: Filtrowanie nazw
+    │   Filter            │     (Google, Elon Musk → OUT)
+    └────────┬────────────┘
+             │
+             ▼
+    ┌─────────────────────┐
+    │   LLM Analysis      │  ← KROK 5: Walidacja przez AI
+    │   (GPT-4o-mini)     │     (Czy to TREND czy NEWS?)
+    └────────┬────────────┘
+             │
+             ▼
+    ┌─────────────────────┐
+    │   Trend Detector    │  ← KROK 6: Porównanie okresów
+    │   (30d vs 30d)      │     (Wzrost ≥20% = TRENDING)
+    └────────┬────────────┘
+             │
+             ▼
+    ┌─────────────────────┐
+    │   Database Storage  │  ← KROK 7: Zapis do bazy
+    │   + Formatters      │     (Console/Email/Slack)
+    └─────────────────────┘
+
 ```
 
 ---
@@ -76,83 +118,414 @@ Po:
 
 ## KROK 3: BERTopic - Semantic Topic Modeling 🧠
 
-### Faza 1: EMBEDDING - Zamiana tekstu na wektory
+### 🎯 Cel: Zrozumieć CO mówią artykuły, nie tylko JAKIE słowa zawierają
 
 ```
-Tekst artykułu → SentenceTransformer → Wektor 384-wymiarowy
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  BERTopic Pipeline - 4 komponenty współpracujące                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  TEKST ARTYKUŁU                                                             │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────────────┐                                                    │
+│  │ 1. SentenceTransformer │  ← "Tłumacz" tekstu na liczby                  │
+│  │    (Embedding Model)    │     Zamienia tekst → wektor 384 liczb         │
+│  └─────────────────────┘                                                    │
+│       │                                                                     │
+│       │  384 wymiary (za dużo do analizy!)                                  │
+│       ▼                                                                     │
+│  ┌─────────────────────┐                                                    │
+│  │ 2. UMAP             │  ← "Kompresor" wymiarów                           │
+│  │    (Redukcja)       │     Zmniejsza 384D → 5D zachowując strukturę      │
+│  └─────────────────────┘                                                    │
+│       │                                                                     │
+│       │  5 wymiarów (można wizualizować!)                                   │
+│       ▼                                                                     │
+│  ┌─────────────────────┐                                                    │
+│  │ 3. HDBSCAN          │  ← "Grupowacz" artykułów                          │
+│  │    (Clustering)     │     Znajduje naturalne skupiska podobnych        │
+│  └─────────────────────┘                                                    │
+│       │                                                                     │
+│       │  Grupy artykułów (tematy)                                           │
+│       ▼                                                                     │
+│  ┌─────────────────────┐                                                    │
+│  │ 4. c-TF-IDF         │  ← "Nazywacz" tematów                             │
+│  │    (Reprezentacja)  │     Wyciąga słowa kluczowe z każdej grupy        │
+│  └─────────────────────┘                                                    │
+│       │                                                                     │
+│       ▼                                                                     │
+│  NAZWANE TEMATY: "AI Content", "Privacy Marketing", "Influencer ROI"       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Faza 1: EMBEDDING - Zamiana tekstu na wektory (SentenceTransformer)
+
+#### 🤔 Problem: Komputer nie rozumie słów
+Komputer widzi tylko cyfry. "Marketing" dla niego to ciąg bajtów `77 97 114 107...`
+Jak powiedzieć komputerowi, że "Marketing" i "Reklama" są podobne?
+
+#### 💡 Rozwiązanie: Semantic Embeddings
+Każde słowo/zdanie zamieniamy na **wektor liczb** (listę 384 liczb),
+gdzie **podobne znaczeniowo teksty mają podobne wektory**.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  ANALOGIA: Mapa GPS dla tekstu                                  │
+│                                                                 │
+│  Tak jak GPS zamienia adres na współrzędne (lat, lng):         │
+│    "Warszawa" → [52.23, 21.01]                                  │
+│    "Kraków"   → [50.06, 19.94]                                  │
+│                                                                 │
+│  Tak SentenceTransformer zamienia tekst na "współrzędne":      │
+│    "AI marketing" → [0.12, -0.34, 0.56, ..., 0.89]  (384 liczb)│
+│    "AI reklama"   → [0.11, -0.33, 0.57, ..., 0.88]  (podobne!) │
+│    "Przepis na pierogi" → [-0.87, 0.12, ..., -0.45] (inne!)    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Jak to działa pod spodem?**
+```
+Artykuł: "AI is transforming digital marketing strategies..."
+                    │
+                    ▼
+    ┌─────────────────────────────────┐
+    │   SentenceTransformer           │
+    │   (sieć neuronowa BERT)         │
+    │                                 │
+    │   1. Tokenizacja tekstu         │
+    │   2. Przejście przez 12 warstw  │
+    │   3. Pooling (średnia)          │
+    └─────────────────────────────────┘
+                    │
+                    ▼
+    Wektor: [0.023, -0.156, 0.789, ..., 0.234]
+            ↑_________________________________↑
+                    384 wymiary
 ```
 
 **Modele w zależności od języka:**
 ```python
-multilingual → 'paraphrase-multilingual-MiniLM-L12-v2'  # Domyślnie
-english      → 'all-MiniLM-L6-v2'                       # Szybciej
-polish       → 'sdadas/mmlw-retrieval-roberta-base'     # Optimized
+multilingual → 'paraphrase-multilingual-MiniLM-L12-v2'  # Domyślnie, 12 warstw
+english      → 'all-MiniLM-L6-v2'                       # Szybciej, 6 warstw
+polish       → 'sdadas/mmlw-retrieval-roberta-base'     # Optymalizowany dla PL
 ```
 
-**Efekt**: Każdy artykuł to wektor liczb reprezentujący jego znaczenie (semantyka)
+**Wymiarowość:** Każdy model produkuje wektor o **stałej długości 384** (MiniLM) lub 768 (RoBERTa).
+
+**Dlaczego 384 wymiary?**
+- Wystarczająco dużo, żeby uchwycić niuanse znaczenia
+- Wystarczająco mało, żeby było wydajne obliczeniowo
+- Każdy wymiar reprezentuje jakiś "aspekt" znaczenia (trudny do interpretacji dla człowieka)
 
 ---
 
 ### Faza 2: DIMENSIONALITY REDUCTION - UMAP
 
+#### 🤔 Problem: 384 wymiary to za dużo
+- Nie da się tego zwizualizować (człowiek widzi max 3D)
+- "Klątwa wymiarowości" - w wielu wymiarach wszystko wydaje się równie odległe
+- Algorytmy klastrowania źle działają w wysokich wymiarach
+
+#### 💡 Rozwiązanie: UMAP (Uniform Manifold Approximation and Projection)
+Kompresujemy 384D → 5D, **zachowując strukturę sąsiedztwa**.
+
 ```
-384 wymiary → UMAP → 5 wymiarów
+┌─────────────────────────────────────────────────────────────────┐
+│  ANALOGIA: Spłaszczanie globusa do mapy                        │
+│                                                                 │
+│  Glob ziemski jest 3D, ale mapa jest 2D.                       │
+│  Mimo to mapa zachowuje relatywne odległości:                  │
+│    - Warszawa nadal jest blisko Krakowa                        │
+│    - Australia nadal jest daleko od Europy                     │
+│                                                                 │
+│  UMAP robi to samo: spłaszcza 384D do 5D,                      │
+│  zachowując "kto jest blisko kogo".                            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**Parametry:**
-- `n_neighbors=15` - Ile najbliższych sąsiadów
-- `n_components=5` - Wyjściowe wymiary
-- `metric='cosine'` - Miara odległości
+```
+PRZED (384D - nie da się narysować):
+Artykuł 1: [0.12, -0.34, 0.56, ..., 0.89]  ─┐
+Artykuł 2: [0.11, -0.33, 0.57, ..., 0.88]  ─┼─ Podobne (blisko w 384D)
+Artykuł 3: [-0.87, 0.12, ..., -0.45]       ─── Inny (daleko w 384D)
 
-**Efekt**: Zmniejszenie szumu, zachowanie struktury semantycznej
+                    │
+                    │  UMAP
+                    ▼
+
+PO (5D - można analizować):
+Artykuł 1: [2.3, -1.2, 0.8, 0.1, -0.5]   ─┐
+Artykuł 2: [2.4, -1.1, 0.9, 0.2, -0.4]   ─┼─ Nadal blisko!
+Artykuł 3: [-3.1, 2.4, -1.8, 1.2, 0.9]   ─── Nadal daleko!
+```
+
+**Parametry UMAP:**
+```python
+umap_model = UMAP(
+    n_neighbors=15,      # Patrz na 15 najbliższych sąsiadów
+    n_components=5,      # Wynik: 5 wymiarów (zamiast 384!)
+    min_dist=0.0,        # Pozwól punktom być bardzo blisko siebie
+    metric='cosine',     # Mierz podobieństwo kątem, nie odległością
+    random_state=42      # Dla powtarzalności
+)
+```
+
+**Dlaczego akurat 5 wymiarów?**
+- 2-3D: Za mało informacji, tracimy niuanse
+- 5D: Dobry kompromis między informacją a wydajnością
+- 10+D: Mało zyskujemy, a tracimy na wydajności
 
 ---
 
 ### Faza 3: CLUSTERING - HDBSCAN
 
+#### 🤔 Problem: Mamy punkty w 5D, ale nie wiemy które są "razem"
+Artykuły to teraz punkty w przestrzeni 5-wymiarowej.
+Które z nich tworzą "grupy" (czyli tematy)?
+
+#### 💡 Rozwiązanie: HDBSCAN (Hierarchical Density-Based Spatial Clustering)
+Znajduje **gęste skupiska** punktów - naturalne grupy bez określania z góry ile ich ma być.
+
 ```
-5-wymiarowe punkty → HDBSCAN → Grupy (topics)
+┌─────────────────────────────────────────────────────────────────┐
+│  ANALOGIA: Szukanie grup ludzi na placu                        │
+│                                                                 │
+│  Wyobraź sobie plac z setkami osób:                            │
+│    ○ ○ ○         ○   ○            ○ ○                          │
+│    ○ ○ ○ ○       ○                ○ ○ ○                        │
+│      ○ ○                          ○ ○                          │
+│                    ○                                            │
+│                      ○    ○                                     │
+│                                                                 │
+│  HDBSCAN znajduje "naturalne" grupy:                           │
+│    [GRUPA 1]      [samotni]       [GRUPA 2]                    │
+│    ● ● ●         ○   ○            ● ●                          │
+│    ● ● ● ●       ○                ● ● ●                        │
+│      ● ●                          ● ●                          │
+│                    ○  ← outlier                                 │
+│                      ○    ○  ← outlierzy                        │
+│                                                                 │
+│  Samotne osoby = OUTLIERZY (topic -1)                          │
+│  Nie pasują do żadnej grupy.                                   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**Parametry:**
+**Dlaczego HDBSCAN a nie K-Means?**
+
+| Cecha | K-Means | HDBSCAN |
+|-------|---------|---------|
+| Wymaga liczby klastrów | ✅ TAK (trzeba zgadnąć) | ❌ NIE (sam znajduje) |
+| Kształt klastrów | Tylko kuliste | Dowolne kształty |
+| Obsługa outlierów | ❌ Każdy punkt gdzieś trafia | ✅ Outlierzy to topic -1 |
+| Gęstość | Ignoruje | Szuka gęstych obszarów |
+
+**Parametry HDBSCAN:**
 ```python
-min_cluster_size = 8  # Minimum 8 artykułów w temacie (TOPIC_MIN_TOPIC_SIZE)
-metric = 'euclidean'  # Odległość między punktami
-cluster_selection_method = 'eom'  # End of moment
+hdbscan_model = HDBSCAN(
+    min_cluster_size=3,          # Minimum 3 artykuły, żeby był temat
+    min_samples=3,               # Minimum 3 sąsiadów w gęstym regionie
+    metric='euclidean',          # Odległość euklidesowa w 5D
+    cluster_selection_method='eom',  # "Excess of Mass" - preferuje mniejsze, gęstsze klastry
+    prediction_data=True         # Zachowaj dane do późniejszych predykcji
+)
 ```
 
-**Efekt**: Znajdujemy naturalne grupy artykułów o podobnym znaczeniu
-- Artykuły bez grupy → topic -1 (outliers)
+**Co to znaczy `min_cluster_size=3`?**
+```
+✅ Akceptowane jako temat:
+   ○ ○ ○     (3 artykuły o AI w marketingu)
+   ○ ○ ○ ○   (4 artykuły o prywatności)
+
+❌ Za małe - idzie do outlierów:
+   ○ ○       (tylko 2 artykuły o Elon Musku)
+   ○         (1 artykuł o piernikach)
+```
+
+**Wynik HDBSCAN:**
+```python
+topics = [0, 0, 0, 1, 1, 1, 1, -1, 2, 2, 2, -1, -1]
+           │  │  │  │  │  │  │  │   │  │  │   │   │
+           └──┴──┴──┘  └──┴──┴──┘   └──┴──┘   └───┘
+           Temat 0     Temat 1       Temat 2   Outlierzy
+           (3 art.)    (4 art.)      (3 art.)  (3 art.)
+```
 
 ---
 
-### Faza 4: REPRESENTATION - c-TF-IDF
+### Faza 4: REPRESENTATION - c-TF-IDF (Class-based TF-IDF)
+
+#### 🤔 Problem: Mamy grupy, ale jak je NAZWAĆ?
+Wiemy, że artykuły 1, 2, 3 są w grupie razem.
+Ale o czym ta grupa? Jaki to temat?
+
+#### 💡 Rozwiązanie: c-TF-IDF
+Dla każdej grupy znajdujemy słowa, które są **częste w tej grupie**
+ale **rzadkie w innych grupach**.
 
 ```
-Artykuły w grupie → CountVectorizer → Top słowa
+┌─────────────────────────────────────────────────────────────────┐
+│  ANALOGIA: Co wyróżnia gazetę sportową od finansowej?          │
+│                                                                 │
+│  Gazeta sportowa:  "gol", "mecz", "liga", "trener"             │
+│  Gazeta finansowa: "akcje", "giełda", "indeks", "bank"         │
+│                                                                 │
+│  Słowo "jest" występuje w obu - NIE wyróżnia.                  │
+│  Słowo "gol" występuje tylko w sportowej - WYRÓŻNIA!           │
+│                                                                 │
+│  c-TF-IDF znajduje takie "wyróżniające" słowa dla każdej grupy.│
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**Jak działa:**
+**Jak działa c-TF-IDF:**
+```
+Krok 1: Połącz wszystkie artykuły z grupy w jeden "super-dokument"
+        Topic 0: "AI marketing AI content generation AI tools..."
+        Topic 1: "privacy cookies GDPR consent tracking..."
+
+Krok 2: Policz słowa (TF - Term Frequency)
+        Topic 0: AI=15, marketing=8, content=7, the=50...
+        Topic 1: privacy=12, cookies=9, GDPR=6, the=45...
+
+Krok 3: Zmniejsz wagę słów częstych wszędzie (IDF - Inverse Document Frequency)
+        "the" jest wszędzie → niska waga
+        "AI" jest głównie w Topic 0 → wysoka waga dla Topic 0
+        "privacy" jest głównie w Topic 1 → wysoka waga dla Topic 1
+
+Krok 4: TF × IDF = wynik końcowy
+```
+
+**Parametry CountVectorizer:**
 ```python
-# 1. N-gramy (kombinacje słów)
-ngram_range = (1, 3)  # "ai", "content generation", "ai powered content"
+vectorizer_model = CountVectorizer(
+    ngram_range=(1, 2),      # Słowa pojedyncze i pary: "ai", "ai marketing"
+    stop_words=stopwords,     # Usuń "the", "a", "i", "w" itd.
+    min_df=2,                 # Słowo musi być w min. 2 dokumentach
+    max_df=0.95,              # Słowo może być w max 95% dokumentów
+    lowercase=True            # Zamień na małe litery
+)
 
-# 2. Stopwords (usuwamy słowa bez sensu)
-stopwords = ['the', 'a', 'and', ...] + polish_stopwords
-
-# 3. Filtrowanie
-min_df = 2      # Słowo w minimum 2 dokumentach
-max_df = 0.8    # Słowo w max 80% dokumentów
-
-# 4. Top 5 słów dla każdego tematu
-top_n_words = 5
+top_n_words = 5              # Weź 5 najlepszych słów na temat
 ```
 
 **Rezultat:**
 ```
-Topic 0: ['ai', 'content', 'generation', 'advertising', 'automation']
-Topic 1: ['privacy', 'cookies', 'tracking', 'gdpr', 'consent']
-Topic 2: ['influencer', 'marketing', 'roi', 'analytics', 'performance']
+Topic 0 (15 artykułów): ['ai', 'content', 'generation', 'automation', 'tools']
+                         ↑ Najwyższy score c-TF-IDF
+
+Topic 1 (12 artykułów): ['privacy', 'cookies', 'tracking', 'gdpr', 'consent']
+
+Topic 2 (8 artykułów):  ['influencer', 'marketing', 'roi', 'analytics', 'creator']
+
+Topic -1 (outlierzy):   NIE MA REPREZENTACJI (to nie jest spójny temat)
+```
+
+---
+
+### 📊 Podsumowanie całego pipeline'u BERTopic
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        CAŁY PROCES W PIGUŁCE                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  100 artykułów                                                              │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ SentenceTransformer: 100 tekstów → 100 wektorów × 384 wymiary      │   │
+│  │ "Każdy artykuł ma teraz swoje 'współrzędne GPS w przestrzeni idei'" │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│       │                                                                     │
+│       │  Macierz 100 × 384                                                  │
+│       ▼                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ UMAP: 100 × 384 → 100 × 5                                          │   │
+│  │ "Kompresja z zachowaniem sąsiedztwa - podobne artykuły nadal blisko"│   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│       │                                                                     │
+│       │  Macierz 100 × 5                                                    │
+│       ▼                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ HDBSCAN: 100 punktów w 5D → grupy                                  │   │
+│  │ "Znajdź gęste skupiska - to są nasze tematy"                        │   │
+│  │                                                                     │   │
+│  │ Wynik: Topic 0: 25 art. | Topic 1: 18 art. | Topic 2: 12 art.      │   │
+│  │        Topic 3: 8 art.  | Outlierzy (-1): 37 art.                   │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ c-TF-IDF: Dla każdego tematu → 5 słów kluczowych                   │   │
+│  │ "Co wyróżnia tę grupę od innych?"                                   │   │
+│  │                                                                     │   │
+│  │ Topic 0: ['ai', 'content', 'generation', 'automation', 'tools']    │   │
+│  │ Topic 1: ['privacy', 'cookies', 'tracking', 'gdpr', 'consent']     │   │
+│  │ Topic 2: ['influencer', 'marketing', 'roi', 'analytics']           │   │
+│  │ Topic 3: ['video', 'tiktok', 'short', 'form', 'engagement']        │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  🎯 WYNIK: 4 tematy z nazwami i słowami kluczowymi                         │
+│            + 37 outlierów (artykuły bez wyraźnego wzorca)                   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 🔸 Co to są OUTLIERZY (Topic -1) i dlaczego to dobrze?
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  DLACZEGO NIEKTÓRE ARTYKUŁY NIE MAJĄ TEMATU?                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Outlier (topic -1) to artykuł, który:                                      │
+│                                                                             │
+│  1. Jest ZBYT UNIKALNY                                                      │
+│     └─ Jedyny artykuł o "AI w rolnictwie" wśród 100 o marketingu           │
+│                                                                             │
+│  2. Jest POMIĘDZY tematami                                                  │
+│     └─ Artykuł o "Privacy w AI Marketing" - pasuje trochę do obu tematów   │
+│                                                                             │
+│  3. Ma ZA MAŁO podobnych artykułów                                          │
+│     └─ 2 artykuły o Elonie Musku, ale min_cluster_size=3                   │
+│                                                                             │
+│  4. Jest NEWSEM, nie TRENDEM                                                │
+│     └─ "Google ogłosił nowy produkt" - jednorazowe wydarzenie              │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  DLACZEGO TO DOBRZE?                                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ✅ FILTRUJE SZUM                                                           │
+│     Nie każdy artykuł to trend. Outlierzy to często:                        │
+│     - Jednorazowe ogłoszenia firm                                           │
+│     - Opinie pojedynczych autorów                                           │
+│     - Tematy poza głównym nurtem                                            │
+│                                                                             │
+│  ✅ POPRAWIA JAKOŚĆ TEMATÓW                                                 │
+│     Tematy są "czystsze" - zawierają tylko artykuły naprawdę podobne        │
+│                                                                             │
+│  ✅ WSKAZUJE BRAK TRENDU                                                    │
+│     Wysoki % outlierów = branża jest "rozdrobniona"                         │
+│     Niski % outlierów = wyraźne trendy dominują                             │
+│                                                                             │
+│  📊 TYPOWE PROPORCJE:                                                       │
+│     20-40% outlierów = normalne                                             │
+│     50%+ outlierów = albo za mało danych, albo brak trendów                 │
+│     <10% outlierów = bardzo spójna tematyka (rzadkie)                       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---

@@ -172,7 +172,13 @@
 
                     row.innerHTML = `
                         <td><strong>${trend.keyword}</strong></td>
-                        <td>${trend.count}</td>
+                        <td>
+                            <a href="articles.html?topic_id=${trend.topic_id}&topic_name=${encodeURIComponent(trend.keyword)}"
+                               style="color: var(--primary-color); text-decoration: none;"
+                               title="Zobacz artykuły powiązane z tym trendem">
+                                ${trend.count} 📄
+                            </a>
+                        </td>
                         <td><span class="badge badge-success">+${growthPercent}%</span></td>
                         <td>${trendBadge}</td>
                     `;

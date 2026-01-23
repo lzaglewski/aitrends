@@ -215,7 +215,13 @@
 
                     row.innerHTML = `
                         <td><strong>${trend.keyword}</strong></td>
-                        <td>${trend.count}</td>
+                        <td>
+                            <a href="articles.html?topic_id=${trend.topic_id}&topic_name=${encodeURIComponent(trend.keyword)}"
+                               style="color: var(--primary-color); text-decoration: none;"
+                               title="Zobacz artykuły powiązane z tym trendem">
+                                ${trend.count} 📄
+                            </a>
+                        </td>
                         <td><span class="badge badge-success">+${growthPercent}%</span></td>
                         <td><span class="badge badge-success">📈 Rosnący</span></td>
                     `;
@@ -262,12 +268,19 @@
                     return;
                 }
 
-                emerging.forEach(keyword => {
+                emerging.forEach(topic => {
                     const row = document.createElement('tr');
+                    const topicName = topic.topic_name || topic.keyword;
 
                     row.innerHTML = `
-                        <td><strong>${keyword.keyword}</strong></td>
-                        <td>${keyword.count}</td>
+                        <td><strong>${topicName}</strong></td>
+                        <td>
+                            <a href="articles.html?topic_id=${topic.topic_id}&topic_name=${encodeURIComponent(topicName)}"
+                               style="color: var(--primary-color); text-decoration: none;"
+                               title="Zobacz artykuły powiązane z tym trendem">
+                                ${topic.count} 📄
+                            </a>
+                        </td>
                         <td><span class="badge badge-info">🌟 Nowe</span></td>
                     `;
 
@@ -313,13 +326,19 @@
                     return;
                 }
 
-                declining.forEach(keyword => {
+                declining.forEach(topic => {
                     const row = document.createElement('tr');
-                    const declinePercent = Math.abs(keyword.growth_rate * 100).toFixed(1);
+                    const declinePercent = Math.abs(topic.growth_rate * 100).toFixed(1);
 
                     row.innerHTML = `
-                        <td><strong>${keyword.keyword}</strong></td>
-                        <td>${keyword.count}</td>
+                        <td><strong>${topic.keyword}</strong></td>
+                        <td>
+                            <a href="articles.html?topic_id=${topic.topic_id}&topic_name=${encodeURIComponent(topic.keyword)}"
+                               style="color: var(--primary-color); text-decoration: none;"
+                               title="Zobacz artykuły powiązane z tym trendem">
+                                ${topic.count} 📄
+                            </a>
+                        </td>
                         <td><span class="badge badge-warning">-${declinePercent}%</span></td>
                     `;
 
@@ -368,7 +387,13 @@
                     row.innerHTML = `
                         <td>${index + 1}</td>
                         <td><strong>${keyword.keyword}</strong></td>
-                        <td>${keyword.count}</td>
+                        <td>
+                            <a href="articles.html?keyword=${encodeURIComponent(keyword.keyword)}"
+                               style="color: var(--primary-color); text-decoration: none;"
+                               title="Zobacz artykuły z tym słowem kluczowym">
+                                ${keyword.count} 📄
+                            </a>
+                        </td>
                     `;
 
                     tbody.appendChild(row);
