@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wizualizacja Tematów - AI Trends Monitor</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        .visualization-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        #topic-plot {
+            width: 100%;
+            height: 600px;
+        }
+
+        .controls-row {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .control-group label {
+            font-size: 0.85rem;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .control-group select,
+        .control-group input {
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        .stats-row {
+            display: flex;
+            gap: 2rem;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+            color: white;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-item .value {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .stat-item .label {
+            font-size: 0.85rem;
+            opacity: 0.9;
+        }
+
+        .explanation-box {
+            background: #e8f4f8;
+            border-left: 4px solid #17a2b8;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .explanation-box h4 {
+            margin: 0 0 0.5rem 0;
+            color: #17a2b8;
+        }
+
+        .explanation-box p {
+            margin: 0;
+            color: #555;
+            font-size: 0.9rem;
+        }
+
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            margin-top: 1rem;
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        .plot-wrapper {
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-container">
+            <a href="index.html" class="nav-brand">AI Trends Monitor</a>
+            <ul class="nav-links">
+                <li><a href="index.html">Dashboard</a></li>
+                <li><a href="sources.html">Źródła</a></li>
+                <li><a href="articles.html">Artykuły</a></li>
+                <li><a href="trends.html">Trendy</a></li>
+                <li><a href="visualization.html" class="active">Wizualizacja</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container">
+        <div class="page-header">
+            <h1>Mapa Tematów</h1>
+            <p>Interaktywna wizualizacja przestrzeni semantycznej artykułów</p>
+        </div>
+
+        <!-- Explanation -->
+        <div class="explanation-box">
+            <h4>Jak czytać tę wizualizację?</h4>
+            <p>
+                Każdy punkt to artykuł. <strong>Artykuły blisko siebie są semantycznie podobne</strong> -
+                mówią o podobnych tematach. Kolory oznaczają różne tematy wykryte przez BERTopic.
+                Szare punkty (outlierzy) to artykuły, które nie pasują do żadnej grupy - często są to
+                jednorazowe newsy lub unikalne tematy. <strong>Najedź na punkt</strong>, aby zobaczyć tytuł artykułu.
+            </p>
+        </div>
+
+        <!-- Stats Row -->
+        <div class="stats-row" id="stats-row" style="display: none;">
+            <div class="stat-item">
+                <div class="value" id="stat-articles">-</div>
+                <div class="label">Artykułów</div>
+            </div>
+            <div class="stat-item">
+                <div class="value" id="stat-topics">-</div>
+                <div class="label">Tematów</div>
+            </div>
+            <div class="stat-item">
+                <div class="value" id="stat-days">-</div>
+                <div class="label">Dni</div>
+            </div>
+            <div class="stat-item">
+                <div class="value" id="stat-generated">-</div>
+                <div class="label">Wygenerowano</div>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls-row">
+            <div class="control-group">
+                <label>Okres (dni)</label>
+                <select id="days-select">
+                    <option value="30">30 dni</option>
+                    <option value="60" selected>60 dni</option>
+                    <option value="90">90 dni</option>
+                    <option value="180">180 dni</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Max artykułów</label>
+                <select id="max-articles-select">
+                    <option value="200">200</option>
+                    <option value="500" selected>500</option>
+                    <option value="1000">1000</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="include-outliers" checked>
+                    Pokaż outlierów
+                </label>
+            </div>
+
+            <button class="btn btn-primary" onclick="loadVisualization()">
+                Odśwież wizualizację
+            </button>
+        </div>
+
+        <!-- Visualization -->
+        <div class="visualization-container">
+            <div class="plot-wrapper">
+                <div id="topic-plot"></div>
+                <div id="loading-overlay" class="loading-overlay" style="display: none;">
+                    <div class="loading-spinner"></div>
+                    <div class="loading-text">Generowanie wizualizacji... (może potrwać do 30 sekund)</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="error-container"></div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script>
+        // Load visualization on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadVisualization();
+        });
+
+        async function loadVisualization() {
+            const plotDiv = document.getElementById('topic-plot');
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const errorContainer = document.getElementById('error-container');
+            const statsRow = document.getElementById('stats-row');
+
+            // Get parameters
+            const days = document.getElementById('days-select').value;
+            const maxArticles = document.getElementById('max-articles-select').value;
+            const includeOutliers = document.getElementById('include-outliers').checked;
+
+            // Show loading
+            loadingOverlay.style.display = 'flex';
+            errorContainer.innerHTML = '';
+            statsRow.style.display = 'none';
+
+            try {
+                const response = await fetch(
+                    `${api.baseUrl}/topics/visualization?days=${days}&max_articles=${maxArticles}&include_outliers=${includeOutliers}`
+                );
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (!data.traces || data.traces.length === 0) {
+                    showError('Brak danych do wizualizacji. Uruchom scraping, aby zebrać artykuły.');
+                    Plotly.purge(plotDiv);
+                    return;
+                }
+
+                // Update stats
+                if (data.metadata) {
+                    document.getElementById('stat-articles').textContent = data.metadata.total_articles || '-';
+                    document.getElementById('stat-topics').textContent = data.metadata.unique_topics || '-';
+                    document.getElementById('stat-days').textContent = data.metadata.days_covered || '-';
+
+                    if (data.metadata.generated_at) {
+                        const date = new Date(data.metadata.generated_at);
+                        document.getElementById('stat-generated').textContent = date.toLocaleTimeString('pl-PL');
+                    }
+
+                    statsRow.style.display = 'flex';
+                }
+
+                // Create plot
+                const config = {
+                    responsive: true,
+                    displayModeBar: true,
+                    modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                    displaylogo: false
+                };
+
+                // Add click handler to open articles
+                data.layout.hovermode = 'closest';
+
+                Plotly.newPlot(plotDiv, data.traces, data.layout, config);
+
+                // Add click event to open article URL
+                plotDiv.on('plotly_click', function(eventData) {
+                    if (eventData.points && eventData.points[0]) {
+                        const point = eventData.points[0];
+                        if (point.customdata && point.customdata[0]) {
+                            window.open(point.customdata[0], '_blank');
+                        }
+                    }
+                });
+
+            } catch (error) {
+                console.error('Error loading visualization:', error);
+                showError(`Błąd ładowania wizualizacji: ${error.message}`);
+            } finally {
+                loadingOverlay.style.display = 'none';
+            }
+        }
+
+        function showError(message) {
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.innerHTML = `
+                <div class="error-message">
+                    <strong>Błąd:</strong> ${message}
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

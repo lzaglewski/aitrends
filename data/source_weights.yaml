@@ -1,0 +1,45 @@
+# Source Credibility Weights Configuration
+#
+# Weights affect how much influence each source has on trend detection.
+# Higher weights = more trustworthy/authoritative sources
+# Weight of 0 = blacklisted (articles will be filtered out)
+#
+# Format: Domain-based matching (supports partial matches)
+
+# Default weight for sources not explicitly listed
+default_weight: 1.0
+
+# High credibility sources (weight: 1.5)
+# Major industry publications, established authorities
+high_credibility:
+  domains:
+    - adweek.com
+    - thinkwithgoogle.com
+    - hubspot.com
+    - moz.com
+    - searchengineland.com
+  weight: 1.5
+
+# Medium credibility sources (weight: 1.0)
+# Regional publications, niche blogs, professional sites
+medium_credibility:
+  domains:
+    - marketingprzykawie.pl
+    - socialmediaexaminer.com
+  weight: 1.0
+
+# Low credibility sources (weight: 0.5)
+# Aggregators, content farms, questionable sources
+low_credibility:
+  domains:
+    - example-aggregator.com
+    - content-farm-example.com
+  weight: 0.5
+
+# Blacklist (weight: 0)
+# Spam sources, unreliable content, known misinformation
+blacklist:
+  domains:
+    - spam-site.com
+    - fake-news-example.com
+  weight: 0

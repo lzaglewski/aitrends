@@ -15,6 +15,7 @@ import os
 
 from src.scrapers.rss_fetcher import RSSFetcher
 from src.processors.keyword_extractor import TopicExtractor
+from src.processors.article_summarizer import ArticleSummarizer, run_summarization_pipeline
 from src.analyzers.topic_modeler import TopicModeler
 from src.analyzers.trend_detector import TrendDetector
 from src.analyzers.llm_trend_analyzer import enhance_topics_with_llm
@@ -22,19 +23,54 @@ from src.formatters.trend_summarizer import format_trends_for_output
 from src.storage.database import Database, init_db
 from src.config import settings
 
+# Disable tokenizers parallelism warning (occurs when forking after using transformers)
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
-# Configure logger
+# Configure logger with human-friendly format
 logger.remove()
+
+
+def format_log(record):
+    """Custom formatter for human-readable logs."""
+    time_str = record["time"].strftime("%H:%M:%S")
+    level = record["level"].name
+    message = record["message"]
+
+    # Add emoji prefix based on level (only if message doesn't already start with emoji)
+    level_prefix = ""
+    first_char = message[0] if message else ""
+    # Check if message already starts with emoji (Unicode > 127 for non-ASCII)
+    has_emoji = ord(first_char) > 127 if first_char else False
+
+    if not has_emoji:
+        if level == "WARNING":
+            level_prefix = "⚠️  "
+        elif level == "ERROR":
+            level_prefix = "❌ "
+        elif level == "DEBUG":
+            level_prefix = "🔍 "
+
+    # Simple, clean format: time | message
+    if level == "ERROR":
+        return f"<dim>{time_str}</dim> | <red><bold>{level_prefix}{message}</bold></red>\n"
+    elif level == "WARNING":
+        return f"<dim>{time_str}</dim> | <yellow>{level_prefix}{message}</yellow>\n"
+    else:
+        return f"<dim>{time_str}</dim> | {level_prefix}{message}\n"
+
+
 logger.add(
     sys.stderr,
-    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-    level="INFO"
+    format=format_log,
+    level="INFO",
+    colorize=True
 )
 logger.add(
     "logs/ad_trends_{time:YYYY-MM-DD}.log",
     rotation="1 day",
     retention="30 days",
-    level="DEBUG"
+    level="DEBUG",
+    format="{time:HH:mm:ss} | [{level}] {message}"
 )
 
 
@@ -54,7 +90,7 @@ def load_sources_from_yaml(yaml_path: str = "data/sources.yaml"):
 
 def initialize_sources():
     """Initialize sources from YAML into database."""
-    logger.info("Initializing sources from YAML")
+    logger.info("🔄 Initializing sources from YAML")
 
     db = Database()
     sources_data = load_sources_from_yaml()
@@ -63,25 +99,91 @@ def initialize_sources():
         logger.warning("No sources found in YAML file")
         return
 
+    # Load source weights if enabled
+    weight_manager = None
+    if settings.SOURCE_WEIGHTS_ENABLED:
+        from src.utils.source_weights import SourceWeightManager
+        weight_manager = SourceWeightManager(settings.SOURCE_WEIGHTS_CONFIG)
+
+        # Log weight summary
+        weighted_sources = sum(1 for s in sources_data if not weight_manager.is_blacklisted(s['url']))
+        blacklisted = len(sources_data) - weighted_sources
+        logger.info(f"📊 Loaded source weights: {weighted_sources} weighted sources, {blacklisted} blacklisted")
+
     for source_data in sources_data:
         try:
+            url = source_data['url']
+
+            # Check if source is blacklisted
+            if weight_manager and weight_manager.is_blacklisted(url):
+                logger.warning(f"🚫 Skipping blacklisted source: {source_data['name']} ({url})")
+                continue
+
+            # Get credibility weight
+            weight = weight_manager.get_weight(url) if weight_manager else 1.0
+
             # Check if source already exists
             with db.get_session() as session:
                 from src.storage.models import Source
-                existing = session.query(Source).filter(Source.url == source_data['url']).first()
+                existing = session.query(Source).filter(Source.url == url).first()
 
                 if not existing:
-                    db.add_source(
+                    # Add new source with weight
+                    source = Source(
                         name=source_data['name'],
-                        url=source_data['url'],
-                        source_type=source_data['type']
+                        url=url,
+                        source_type=source_data['type'],
+                        credibility_weight=weight
                     )
-                    logger.info(f"Added source: {source_data['name']}")
+                    session.add(source)
+                    session.commit()
+                    logger.info(f"➕ Added source: {source_data['name']} (weight: {weight})")
                 else:
-                    logger.debug(f"Source already exists: {source_data['name']}")
+                    # Update weight if changed
+                    if existing.credibility_weight != weight:
+                        existing.credibility_weight = weight
+                        session.commit()
+                        logger.info(f"Updated weight for {source_data['name']}: {weight}")
+                    else:
+                        logger.debug(f"Source already exists: {source_data['name']}")
 
         except Exception as e:
             logger.error(f"Error adding source {source_data.get('name')}: {e}")
+
+
+def run_summarization(db: Database) -> dict:
+    """
+    Run LLM summarization on articles that don't have summaries yet.
+
+    Args:
+        db: Database instance
+
+    Returns:
+        Statistics dictionary
+    """
+    if not settings.USE_LLM_SUMMARIZATION:
+        logger.info("LLM summarization disabled in config")
+        return {"processed": 0, "summarized": 0, "filtered": 0, "failed": 0}
+
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info("📝 LLM SUMMARIZATION PIPELINE")
+    logger.info("=" * 80)
+    logger.info("Generating 2-3 sentence summaries for better BERTopic clustering")
+    logger.info(f"   → Embedding model has 128 token limit, summaries fit better")
+    logger.info(f"   → Also filtering out non-trend content (job posts, events, etc.)")
+    logger.info("=" * 80)
+
+    stats = run_summarization_pipeline(db)
+
+    logger.info("=" * 80)
+    logger.info(f"📊 Summarization Results:")
+    logger.info(f"   ✅ Summarized: {stats['summarized']} articles")
+    logger.info(f"   🚫 Filtered (not trend-relevant): {stats['filtered']} articles")
+    logger.info(f"   ❌ Failed: {stats['failed']} articles")
+    logger.info("=" * 80)
+
+    return stats
 
 
 def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
@@ -92,51 +194,171 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
         db: Database instance
         topic_modeler: TopicModeler instance
     """
-    logger.info("Running topic modeling...")
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info("🚀 STARTING TOPIC MODELING PIPELINE")
+    logger.info("=" * 80)
 
     # Get articles without topic assignment
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info("📥 PHASE 1: LOADING ARTICLES")
+    logger.info("=" * 80)
+
     with db.get_session() as session:
         from src.storage.models import Article
-        articles = (
-            session.query(Article)
-            .filter(Article.topic_id == None)
-            .all()
-        )
+
+        # If summarization is enabled, only get trend-relevant articles
+        if settings.USE_LLM_SUMMARIZATION:
+            articles = (
+                session.query(Article)
+                .filter(Article.topic_id == None)
+                .filter(Article.is_trend_relevant == True)
+                .all()
+            )
+            logger.info(f"   (Filtering by is_trend_relevant=True)")
+        else:
+            articles = (
+                session.query(Article)
+                .filter(Article.topic_id == None)
+                .all()
+            )
 
     if not articles:
-        logger.info("No articles need topic modeling")
+        logger.info("✅ No articles need topic modeling - all articles already processed!")
         return
 
-    logger.info(f"Found {len(articles)} articles without topics")
+    logger.info(f"📚 Found {len(articles)} articles waiting for topic assignment")
+    logger.info("=" * 80)
 
-    # Extract cleaned content
+    # Extract cleaned content (use summary if available)
     text_extractor = TopicExtractor()
     documents = []
     article_ids = []
+    article_urls = []
+    published_dates = []
+    article_dicts = []
 
+    summary_count = 0
     for article in articles:
-        cleaned = text_extractor.extract_text(article.content)
-        if len(cleaned) >= settings.TOPIC_MIN_DOCUMENT_LENGTH:
-            documents.append(cleaned)
+        # Use summary if available (better for clustering due to 128 token limit)
+        if settings.USE_LLM_SUMMARIZATION and article.summary:
+            # Summary is already concise, minimal preprocessing needed
+            doc_text = article.summary
+            summary_count += 1
+        else:
+            # Fall back to full content extraction
+            doc_text = text_extractor.extract_text(article.content)
+
+        if len(doc_text) >= settings.TOPIC_MIN_DOCUMENT_LENGTH:
+            documents.append(doc_text)
             article_ids.append(article.id)
+            article_urls.append(article.url)
+            published_dates.append(article.published_date or article.scraped_date)
+            # Prepare dict for potential deduplication
+            article_dicts.append({
+                'id': article.id,
+                'title': article.title,
+                'content': article.content,
+                'source_id': article.source_id,
+                'url': article.url
+            })
+
+    if settings.USE_LLM_SUMMARIZATION and summary_count > 0:
+        logger.info(f"   📝 Using LLM summaries for {summary_count}/{len(documents)} articles")
 
     if not documents:
         logger.warning("No valid documents for topic modeling")
         return
 
-    logger.info(f"Processing {len(documents)} documents with BERTopic...")
+    # Fuzzy deduplication (if enabled)
+    if settings.DEDUP_ENABLED and len(documents) > 1:
+        from src.processors.deduplicator import ArticleDeduplicator
 
-    # Extract topics
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("🔄 PHASE 2: FUZZY DEDUPLICATION")
+        logger.info("=" * 80)
+        logger.info(f"🔍 Checking {len(documents)} articles for near-duplicates...")
+        logger.info(f"   Similarity threshold: {settings.DEDUP_SIMILARITY_THRESHOLD*100:.0f}%")
+        logger.info(f"   (Articles with >{settings.DEDUP_SIMILARITY_THRESHOLD*100:.0f}% similarity are considered duplicates)")
+
+        deduplicator = ArticleDeduplicator(settings.DEDUP_SIMILARITY_THRESHOLD)
+
+        # Get source weights (empty for now, will be populated in FAZA 2)
+        source_weights = {}
+
+        # Deduplicate
+        deduplicated_articles, dedup_metrics = deduplicator.deduplicate_batch(
+            article_dicts, source_weights
+        )
+
+        # Update documents and article_ids to match deduplicated articles
+        if dedup_metrics['removed'] > 0:
+            deduplicated_ids = {a['id'] for a in deduplicated_articles}
+            new_documents = []
+            new_article_ids = []
+            new_article_urls = []
+            new_published_dates = []
+
+            for i, article_id in enumerate(article_ids):
+                if article_id in deduplicated_ids:
+                    new_documents.append(documents[i])
+                    new_article_ids.append(article_id)
+                    new_article_urls.append(article_urls[i])
+                    new_published_dates.append(published_dates[i])
+
+            documents = new_documents
+            article_ids = new_article_ids
+            article_urls = new_article_urls
+            published_dates = new_published_dates
+
+            logger.info("=" * 80)
+            logger.info(f"📊 Deduplication Results:")
+            logger.info(f"   ✅ Kept: {len(deduplicated_articles)} unique articles")
+            logger.info(f"   🗑️  Removed: {dedup_metrics['removed']} duplicates ({dedup_metrics['rate']*100:.1f}%)")
+            logger.info("=" * 80)
+        else:
+            logger.info("=" * 80)
+            logger.info("   ✅ No duplicates found - all articles are unique!")
+            logger.info("=" * 80)
+
+    logger.info("=" * 80)
+    logger.info("🎯 PHASE 3: BERTOPIC CLUSTERING")
+    logger.info("=" * 80)
+
+    # Extract topics (with embedding cache and temporal weighting if enabled)
     topic_ids, topic_info = topic_modeler.extract_topics(
         documents,
-        min_document_length=settings.TOPIC_MIN_DOCUMENT_LENGTH
+        article_ids=article_ids,
+        article_urls=article_urls,
+        published_dates=published_dates,
+        min_document_length=settings.TOPIC_MIN_DOCUMENT_LENGTH,
+        use_cache=settings.EMBEDDING_CACHE_ENABLED
     )
 
-    logger.info(f"BERTopic completed: {len(topic_info)} raw topics identified")
+    # Count articles per topic
+    from collections import Counter
+    topic_distribution = Counter(topic_ids)
+    outliers_before_llm = topic_distribution.get(-1, 0)
+
+    logger.info("=" * 80)
+    logger.info(f"📊 BERTopic Results:")
+    logger.info(f"   • {len(topic_info)} topics found")
+    logger.info(f"   • {len(documents) - outliers_before_llm} articles assigned to topics")
+    logger.info(f"   • {outliers_before_llm} articles marked as outliers (too diverse)")
+    logger.info("=" * 80)
 
     # LLM Enhancement (if enabled)
+    original_topic_count = len(topic_info)
     if settings.USE_LLM_ENHANCEMENT and topic_info:
-        logger.info("Enhancing topics with LLM analysis...")
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("🤖 PHASE 4: LLM QUALITY FILTERING")
+        logger.info("=" * 80)
+        logger.info(f"🔍 Analyzing {len(topic_info)} topics to filter out noise...")
+        logger.info(f"   → Looking for: broader patterns, industry shifts, recurring themes")
+        logger.info(f"   → Filtering out: one-off announcements, isolated company news")
 
         # Group articles by topic_id
         articles_by_topic = {}
@@ -161,24 +383,53 @@ def run_topic_modeling(db: Database, topic_modeler: TopicModeler):
         # Enhance with LLM
         topic_info = enhance_topics_with_llm(topic_info, articles_by_topic)
 
-        logger.info(f"LLM Enhancement completed: {len(topic_info)} trends identified")
+        logger.info("=" * 80)
+        logger.info(f"✨ LLM Filtering Results:")
+        logger.info(f"   ✅ Kept: {len(topic_info)} topics (genuine trends)")
+        logger.info(f"   ❌ Filtered: {original_topic_count - len(topic_info)} topics (noise/one-offs)")
+        logger.info("=" * 80)
 
     # Save topics to database
     if topic_info:
         db.save_topics(topic_info)
+        # Create set of valid topic IDs (those that passed LLM filtering)
+        valid_topic_ids = set(topic_info.keys())
+    else:
+        valid_topic_ids = set()
 
     # Update article topic assignments
+    articles_in_trends = 0
+    articles_marked_outliers = 0
+
     for i, article_id in enumerate(article_ids):
         if i < len(topic_ids):
-            db.update_article_topic(article_id, topic_ids[i], documents[i])
+            # If topic was filtered out by LLM, mark as outlier
+            final_topic_id = topic_ids[i] if topic_ids[i] in valid_topic_ids else -1
+            db.update_article_topic(article_id, final_topic_id, documents[i])
 
-    logger.info(f"Topic modeling completed: {len(topic_info)} final topics")
+            if final_topic_id != -1:
+                articles_in_trends += 1
+            else:
+                articles_marked_outliers += 1
+
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info("📈 FINAL ARTICLE DISTRIBUTION")
+    logger.info("=" * 80)
+    logger.info(f"   ✅ Assigned to trends: {articles_in_trends} articles ({articles_in_trends/len(documents)*100:.1f}%)")
+    logger.info(f"   🔸 Marked as outliers: {articles_marked_outliers} articles ({articles_marked_outliers/len(documents)*100:.1f}%)")
+    logger.info("")
+    logger.info("   💡 Why outliers?")
+    logger.info("      • Too diverse (don't cluster with other articles)")
+    logger.info(f"      • Part of small clusters (< {settings.TOPIC_MIN_TOPIC_SIZE} articles)")
+    logger.info("      • Belong to topics filtered by LLM (one-off news, not trends)")
+    logger.info("=" * 80)
 
 
 def run_scraping_job():
     """Main scraping and analysis job."""
     logger.info("=" * 80)
-    logger.info(f"Starting scraping job at {datetime.now()}")
+    logger.info(f"🚀 Starting scraping job at {datetime.now()}")
     logger.info("=" * 80)
 
     db = Database()
@@ -191,25 +442,28 @@ def run_scraping_job():
     topic_modeler = TopicModeler(
         language=settings.TOPIC_MODEL_LANGUAGE,
         min_topic_size=settings.TOPIC_MIN_TOPIC_SIZE,
-        nr_topics=settings.TOPIC_NR_TOPICS
+        min_samples=settings.TOPIC_MIN_SAMPLES,
+        nr_topics=settings.TOPIC_NR_TOPICS,
+        use_temporal_weighting=settings.USE_TEMPORAL_WEIGHTING,
+        temporal_lambda=settings.TEMPORAL_LAMBDA_DECAY
     )
 
     if os.path.exists(model_path):
         try:
             topic_modeler.load_model(model_path)
-            logger.info("Loaded existing topic model")
+            logger.info("✅ Loaded existing topic model")
         except Exception as e:
-            logger.warning(f"Could not load model: {e}, will create new one")
+            logger.warning(f"⚠️  Could not load model: {e}, will create new one")
 
     sources = db.get_active_sources()
-    logger.info(f"Found {len(sources)} active sources")
+    logger.info(f"📡 Found {len(sources)} active sources")
 
     total_articles = 0
     new_articles_count = 0
 
     for source in sources:
         try:
-            logger.info(f"Processing source: {source.name} ({source.source_type})")
+            logger.info(f"🔄 Processing source: {source.name} ({source.source_type})")
 
             articles = []
 
@@ -226,7 +480,23 @@ def run_scraping_job():
                 logger.warning(f"Unknown source type: {source.source_type}")
                 continue
 
-            logger.info(f"Fetched {len(articles)} articles from {source.name}")
+            logger.info(f"✅ Fetched {len(articles)} articles from {source.name}")
+
+            # Fetch full content (if enabled)
+            if settings.FULL_CONTENT_ENABLED and articles:
+                from src.scrapers.content_scraper import FullContentScraper
+
+                content_scraper = FullContentScraper(
+                    timeout=settings.FULL_CONTENT_TIMEOUT,
+                    rate_limit_delay=settings.FULL_CONTENT_RATE_LIMIT,
+                    user_agent=settings.USER_AGENT
+                )
+
+                articles = content_scraper.batch_fetch(
+                    articles,
+                    max_workers=settings.FULL_CONTENT_MAX_WORKERS,
+                    min_rss_length=settings.FULL_CONTENT_MIN_RSS_LENGTH
+                )
 
             # Process each article
             for article_data in articles:
@@ -244,7 +514,7 @@ def run_scraping_job():
                     total_articles += 1
                     new_articles_count += 1
 
-                    logger.debug(f"Saved article {article_id}: {article_data.get('title', '')[:50]}")
+                    logger.info(f"💾 Saved article: {article_data.get('title', '')[:50]}... (ID: {article_id})")
 
                 except Exception as e:
                     logger.error(f"Error processing article {article_data.get('url')}: {e}")
@@ -261,7 +531,14 @@ def run_scraping_job():
             logger.error(f"Error processing source {source.name}: {e}")
             continue
 
-    logger.info(f"Scraping completed: {total_articles} total articles ({new_articles_count} new)")
+    logger.info(f"✨ Scraping completed: {total_articles} total articles ({new_articles_count} new)")
+
+    # Run LLM summarization on new articles (before topic modeling)
+    if new_articles_count > 0 and settings.USE_LLM_SUMMARIZATION:
+        try:
+            run_summarization(db)
+        except Exception as e:
+            logger.error(f"Error in LLM summarization: {e}")
 
     # Run topic modeling on new articles
     if new_articles_count > 0:
@@ -276,22 +553,189 @@ def run_scraping_job():
         except Exception as e:
             logger.error(f"Error in topic modeling: {e}")
 
+    # Topic merging (if enabled)
+    if settings.USE_TOPIC_MERGING:
+        try:
+            logger.info("🔀 Running topic merging...")
+            from src.analyzers.topic_merger import TopicMerger
+            from src.analyzers.llm_trend_analyzer import LLMTrendAnalyzer
+
+            # Get all topics
+            all_topics = db.get_all_topics()
+
+            if len(all_topics) >= 2:
+                # Compute centroids for all topics
+                centroids = {}
+                for topic in all_topics:
+                    # Safely convert size to int (handle bytes from DB)
+                    topic_size = int(topic.size) if topic.size and not isinstance(topic.size, bytes) else (
+                        int.from_bytes(topic.size, 'big') if isinstance(topic.size, bytes) and topic.size else 0
+                    )
+                    if topic_size > 0:  # Skip empty topics
+                        article_ids = db.get_article_ids_by_topic(topic.topic_id, limit=100)
+                        if article_ids:
+                            centroid = topic_modeler.compute_topic_centroid(
+                                topic.topic_id, article_ids, db
+                            )
+                            if centroid is not None:
+                                centroids[topic.topic_id] = centroid
+
+                if len(centroids) >= 2:
+                    # Initialize merger
+                    llm_analyzer = LLMTrendAnalyzer() if settings.TOPIC_MERGE_USE_LLM else None
+                    merger = TopicMerger(
+                        db,
+                        llm_analyzer=llm_analyzer,
+                        similarity_threshold=settings.TOPIC_MERGE_SIMILARITY
+                    )
+
+                    # Auto-merge topics
+                    merge_actions = merger.auto_merge_topics(
+                        centroids,
+                        use_llm=settings.TOPIC_MERGE_USE_LLM,
+                        dry_run=False
+                    )
+
+                    if merge_actions:
+                        logger.info(f"✅ Merged {len(merge_actions)} topic pairs")
+                    else:
+                        logger.info("✅ No topics needed merging")
+                else:
+                    logger.info("Not enough topics with centroids for merging")
+            else:
+                logger.info("Not enough topics for merging")
+
+        except Exception as e:
+            logger.error(f"Error in topic merging: {e}")
+
     # Calculate trends
     try:
-        logger.info("Calculating trends...")
+        logger.info("📊 Calculating trends...")
         detector = TrendDetector(db)
-        trends = detector.calculate_trends(
-            window_days=settings.TREND_WINDOW_DAYS,
-            min_count=settings.TREND_MIN_COUNT,
-            min_growth_rate=settings.TREND_MIN_GROWTH_RATE
-        )
+
+        # Use multi-period analysis if enabled, otherwise use standard analysis
+        if settings.USE_MULTIPERIOD_ANALYSIS:
+            trends = detector.calculate_trends_multiperiod(
+                period_weeks=settings.MULTIPERIOD_WEEKS,
+                num_periods=settings.MULTIPERIOD_COUNT,
+                min_count=settings.TREND_MIN_COUNT,
+                min_growth_rate=settings.TREND_MIN_GROWTH_RATE
+            )
+        else:
+            trends = detector.calculate_trends(
+                window_days=settings.TREND_WINDOW_DAYS,
+                min_count=settings.TREND_MIN_COUNT,
+                min_growth_rate=settings.TREND_MIN_GROWTH_RATE
+            )
 
         # Save trends to database
         db.save_trends(trends)
 
+        # Save trend snapshots for historical tracking
+        logger.info("💾 Saving trend snapshots...")
+        centroids = {}  # Store for correlation analysis
+        for trend in trends:
+            try:
+                topic_id = trend['topic_id']
+
+                # Get article IDs for this topic in the current period
+                article_ids = db.get_article_ids_by_topic(
+                    topic_id,
+                    start_date=trend['period_start'],
+                    end_date=trend['period_end'],
+                    limit=100
+                )
+
+                # Compute topic centroid
+                centroid = None
+                if article_ids:
+                    centroid = topic_modeler.compute_topic_centroid(
+                        topic_id, article_ids, db
+                    )
+                    if centroid is not None:
+                        centroids[topic_id] = centroid
+
+                # Save snapshot
+                db.save_trend_snapshot(topic_id, trend, centroid)
+
+            except Exception as e:
+                logger.warning(f"Failed to save snapshot for topic {topic_id}: {e}")
+
+        # Cross-topic correlation analysis (if enabled)
+        if settings.USE_CORRELATION_ANALYSIS and len(trends) >= 2:
+            try:
+                logger.info("🔗 Analyzing cross-topic correlations...")
+                from src.analyzers.correlation_analyzer import CrossTopicCorrelationAnalyzer
+
+                corr_analyzer = CrossTopicCorrelationAnalyzer(db)
+
+                # Get trending topic IDs
+                trending_ids = [t['topic_id'] for t in trends if t.get('is_trending', False)]
+
+                if len(trending_ids) >= 2:
+                    # Calculate correlations
+                    correlations = corr_analyzer.calculate_correlations(
+                        trending_ids,
+                        trends[0]['period_start'],
+                        trends[0]['period_end'],
+                        centroids,
+                        min_correlation=settings.CORRELATION_MIN_THRESHOLD
+                    )
+
+                    if correlations:
+                        # Build correlation graph
+                        correlation_graph = corr_analyzer.build_correlation_graph(
+                            correlations, top_n_per_topic=5
+                        )
+
+                        # Add related_trends to each trend
+                        for trend in trends:
+                            if trend['topic_id'] in correlation_graph:
+                                trend['related_trends'] = correlation_graph[trend['topic_id']]
+
+                        logger.info(f"✅ Added correlation data to {len(correlation_graph)} topics")
+                    else:
+                        logger.info("ℹ️  No significant correlations found")
+                else:
+                    logger.info("ℹ️  Not enough trending topics for correlation analysis")
+
+            except Exception as e:
+                logger.error(f"Error in correlation analysis: {e}")
+
+        # Semantic drift detection (if enabled)
+        if settings.USE_DRIFT_DETECTION and centroids:
+            try:
+                logger.info("🔄 Detecting semantic drift...")
+                from src.analyzers.drift_detector import SemanticDriftDetector
+
+                drift_detector = SemanticDriftDetector(
+                    db,
+                    llm_analyzer=LLMTrendAnalyzer() if settings.USE_LLM_ENHANCEMENT else None,
+                    drift_threshold=settings.DRIFT_THRESHOLD
+                )
+
+                # Detect drift for all topics with centroids
+                drift_results = drift_detector.batch_detect_drift(
+                    centroids,
+                    lookback_days=settings.DRIFT_LOOKBACK_DAYS
+                )
+
+                if drift_results:
+                    # Add drift info to trends
+                    for trend in trends:
+                        if trend['topic_id'] in drift_results:
+                            trend['semantic_drift'] = drift_results[trend['topic_id']]
+
+                    logger.info(f"✅ Detected semantic drift in {len(drift_results)} topics")
+                else:
+                    logger.info("✅ No significant semantic drift detected")
+
+            except Exception as e:
+                logger.error(f"Error in drift detection: {e}")
+
         trending_count = sum(1 for t in trends if t['is_trending'])
         new_count = sum(1 for t in trends if t.get('is_new', False))
-        logger.info(f"Found {trending_count} trending topics ({new_count} new)")
+        logger.info(f"🔥 Found {trending_count} trending topics ({new_count} new)")
 
         # Display trends
         if trends:
@@ -313,15 +757,15 @@ def run_scraping_job():
 
 def run_once():
     """Run scraping job once and exit."""
-    logger.info("Running in single-run mode")
+    logger.info("▶️  Running in single-run mode")
     run_scraping_job()
-    logger.info("Single run completed, exiting")
+    logger.info("✅ Single run completed, exiting")
 
 
 def run_scheduler():
     """Run continuous scheduler."""
-    logger.info("Starting scheduler mode")
-    logger.info(f"Scraping interval: {settings.SCRAPE_INTERVAL_HOURS} hours")
+    logger.info("⏰ Starting scheduler mode")
+    logger.info(f"⏱️  Scraping interval: {settings.SCRAPE_INTERVAL_HOURS} hours")
 
     # Run immediately on start
     run_scraping_job()
@@ -329,7 +773,7 @@ def run_scheduler():
     # Schedule periodic runs
     schedule.every(settings.SCRAPE_INTERVAL_HOURS).hours.do(run_scraping_job)
 
-    logger.info("Scheduler started, waiting for next run...")
+    logger.info("✅ Scheduler started, waiting for next run...")
 
     while True:
         schedule.run_pending()
@@ -360,6 +804,16 @@ def main():
         help='Re-run topic modeling on all articles'
     )
     parser.add_argument(
+        '--summarize',
+        action='store_true',
+        help='Run LLM summarization on articles without summaries and exit'
+    )
+    parser.add_argument(
+        '--topics',
+        action='store_true',
+        help='Run only topic modeling and trend detection (skip scraping and summarization)'
+    )
+    parser.add_argument(
         '--debug',
         action='store_true',
         help='Enable DEBUG logging (shows LLM prompts and responses)'
@@ -385,28 +839,34 @@ def main():
 
     # Initialize database if needed
     if args.init_db:
-        logger.info("Initializing database...")
+        logger.info("🔧 Initializing database...")
         init_db()
-        logger.success("Database initialized")
+        logger.success("✅ Database initialized")
         return
 
     # Initialize sources if needed
     if args.init_sources:
-        logger.info("Initializing sources...")
+        logger.info("🔧 Initializing sources...")
         initialize_sources()
-        logger.success("Sources initialized")
+        logger.success("✅ Sources initialized")
         return
 
     # Remodel all articles
     if args.remodel:
-        logger.info("Re-running topic modeling on all articles...")
+        logger.info("🔄 Re-running topic modeling on all articles...")
         db = Database()
+        db.init_db()
 
         # Reset topic_id for all articles
         with db.get_session() as session:
             from src.storage.models import Article
             session.query(Article).update({Article.topic_id: None})
             session.commit()
+
+        # Run summarization first if enabled (ensures summaries exist)
+        if settings.USE_LLM_SUMMARIZATION:
+            logger.info("📝 Running summarization before topic modeling...")
+            run_summarization(db)
 
         topic_modeler = TopicModeler(
             language=settings.TOPIC_MODEL_LANGUAGE,
@@ -420,7 +880,80 @@ def main():
         os.makedirs(os.path.dirname(settings.TOPIC_MODEL_PATH), exist_ok=True)
         topic_modeler.save_model(settings.TOPIC_MODEL_PATH)
 
-        logger.success("Topic modeling completed")
+        logger.success("✅ Topic modeling completed")
+        return
+
+    # Run summarization only
+    if args.summarize:
+        logger.info("🔄 Running LLM summarization on articles...")
+        db = Database()
+        db.init_db()
+        stats = run_summarization(db)
+        logger.success(f"✅ Summarization completed: {stats['summarized']} summarized, "
+                      f"{stats['filtered']} filtered, {stats['failed']} failed")
+        return
+
+    # Run topics only (skip scraping and summarization)
+    if args.topics:
+        logger.info("🎯 Running topic modeling and trend detection only...")
+        db = Database()
+        db.init_db()
+
+        topic_modeler = TopicModeler(
+            language=settings.TOPIC_MODEL_LANGUAGE,
+            min_topic_size=settings.TOPIC_MIN_TOPIC_SIZE,
+            min_samples=settings.TOPIC_MIN_SAMPLES,
+            nr_topics=settings.TOPIC_NR_TOPICS,
+            use_temporal_weighting=settings.USE_TEMPORAL_WEIGHTING,
+            temporal_lambda=settings.TEMPORAL_LAMBDA_DECAY
+        )
+
+        # Reset topic assignments to re-cluster
+        with db.get_session() as session:
+            from src.storage.models import Article
+            session.query(Article).update({Article.topic_id: None})
+            session.commit()
+            logger.info("🔄 Reset topic assignments for all articles")
+
+        run_topic_modeling(db, topic_modeler)
+
+        # Calculate and display trends
+        try:
+            logger.info("📊 Calculating trends...")
+            detector = TrendDetector(db)
+
+            if settings.USE_MULTIPERIOD_ANALYSIS:
+                trends = detector.calculate_trends_multiperiod(
+                    period_weeks=settings.MULTIPERIOD_WEEKS,
+                    num_periods=settings.MULTIPERIOD_COUNT,
+                    min_count=settings.TREND_MIN_COUNT,
+                    min_growth_rate=settings.TREND_MIN_GROWTH_RATE
+                )
+            else:
+                trends = detector.calculate_trends(
+                    window_days=settings.TREND_WINDOW_DAYS,
+                    min_count=settings.TREND_MIN_COUNT,
+                    min_growth_rate=settings.TREND_MIN_GROWTH_RATE
+                )
+
+            db.save_trends(trends)
+
+            trending_count = sum(1 for t in trends if t['is_trending'])
+            logger.info(f"🔥 Found {trending_count} trending topics")
+
+            if trends:
+                output = format_trends_for_output(
+                    trends,
+                    output_format=settings.TREND_OUTPUT_FORMAT,
+                    max_trends=settings.TREND_MAX_DISPLAY,
+                    period_days=settings.TREND_WINDOW_DAYS
+                )
+                print(output)
+
+        except Exception as e:
+            logger.error(f"Error calculating trends: {e}")
+
+        logger.success("✅ Topic modeling completed")
         return
 
     # Ensure database is initialized

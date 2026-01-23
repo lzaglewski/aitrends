@@ -9,6 +9,7 @@ from umap import UMAP
 from hdbscan import HDBSCAN
 from sklearn.feature_extraction.text import CountVectorizer
 from loguru import logger
+from datetime import datetime
 import re
 
 from .semantic_clustering import NamedEntityFilter
@@ -26,7 +27,10 @@ class TopicModeler:
         self,
         language: str = 'multilingual',
         min_topic_size: int = 3,
-        nr_topics: Optional[int] = None
+        min_samples: Optional[int] = None,
+        nr_topics: Optional[int] = None,
+        use_temporal_weighting: bool = False,
+        temporal_lambda: float = 0.05
     ):
         """
         Initialize the topic modeler.
@@ -34,18 +38,24 @@ class TopicModeler:
         Args:
             language: Language for the model ('multilingual', 'en', 'pl')
             min_topic_size: Minimum number of documents per topic
+            min_samples: Minimum samples for HDBSCAN core points (None = use min_topic_size)
             nr_topics: Number of topics to extract (None = auto)
+            use_temporal_weighting: Whether to apply temporal weighting to embeddings
+            temporal_lambda: Decay rate for temporal weighting (default: 0.05, ~14 day half-life)
         """
         self.language = language
         self.min_topic_size = min_topic_size
+        self.min_samples = min_samples if min_samples is not None else min_topic_size
         self.nr_topics = nr_topics
+        self.use_temporal_weighting = use_temporal_weighting
+        self.temporal_lambda = temporal_lambda
         self.model = None
         self.entity_filter = NamedEntityFilter()
         self._initialize_model()
 
     def _initialize_model(self):
         """Initialize BERTopic model with custom components."""
-        logger.info(f"Initializing BERTopic model (language: {self.language})")
+        logger.info(f"🧠 Initializing BERTopic model (language: {self.language})")
 
         # Select embedding model based on language
         if self.language == 'multilingual':
@@ -70,6 +80,7 @@ class TopicModeler:
         # HDBSCAN for clustering
         hdbscan_model = HDBSCAN(
             min_cluster_size=self.min_topic_size,
+            min_samples=self.min_samples,
             metric='euclidean',
             cluster_selection_method='eom',
             prediction_data=True
@@ -101,13 +112,14 @@ class TopicModeler:
         ]
 
         combined_stopwords = list(set(polish_stopwords + english_stopwords))
+        self.stopwords = combined_stopwords
 
-        # Vectorizer with custom settings
+        # Vectorizer with custom settings (will be adjusted dynamically in extract_topics)
         vectorizer_model = CountVectorizer(
-            ngram_range=(1, 3),
+            ngram_range=(1, 2),  # Reduced from (1,3) for better stability with short docs
             stop_words=combined_stopwords,
             min_df=2,  # Word must appear in at least 2 documents
-            max_df=0.8,
+            max_df=0.95,  # Increased from 0.8 for more flexibility
             lowercase=True
         )
 
@@ -149,14 +161,22 @@ class TopicModeler:
     def extract_topics(
         self,
         documents: List[str],
-        min_document_length: int = 50
+        article_ids: Optional[List[int]] = None,
+        article_urls: Optional[List[str]] = None,
+        published_dates: Optional[List[datetime]] = None,
+        min_document_length: int = 50,
+        use_cache: bool = True
     ) -> Tuple[List[int], Dict[int, Dict]]:
         """
         Extract topics from a list of documents.
 
         Args:
             documents: List of document texts
+            article_ids: Optional list of article IDs for caching
+            article_urls: Optional list of article URLs for caching
+            published_dates: Optional list of publication dates for temporal weighting
             min_document_length: Minimum character length for documents
+            use_cache: Whether to use embedding cache (requires article_ids and article_urls)
 
         Returns:
             Tuple of (topic_ids, topic_info)
@@ -167,7 +187,10 @@ class TopicModeler:
             logger.warning("No documents provided for topic extraction")
             return [], {}
 
+        logger.info(f"📊 Starting BERTopic clustering with {len(documents)} articles...")
+
         # Preprocess documents
+        logger.info(f"🧹 Step 1/5: Preprocessing text (removing URLs, emails, extra whitespace)...")
         processed_docs = [
             self._preprocess_text(doc)
             for doc in documents
@@ -181,15 +204,101 @@ class TopicModeler:
                 valid_docs.append(doc)
                 valid_indices.append(i)
 
+        filtered_count = len(documents) - len(valid_docs)
+        if filtered_count > 0:
+            logger.info(f"⚠️  Filtered out {filtered_count} articles (too short: < {min_document_length} chars)")
+
         if not valid_docs:
-            logger.warning("No valid documents after filtering")
+            logger.warning("❌ No valid documents after filtering")
             return [], {}
 
-        logger.info(f"Extracting topics from {len(valid_docs)} documents...")
+        logger.info(f"✅ {len(valid_docs)} articles ready for clustering")
 
         try:
+            # Adjust vectorizer for document count (prevent min_df/max_df errors)
+            doc_count = len(valid_docs)
+            if doc_count < 50:
+                # For small corpora, relax constraints
+                self.model.vectorizer_model = CountVectorizer(
+                    ngram_range=(1, 2),
+                    stop_words=self.stopwords,
+                    min_df=1,
+                    max_df=1.0,
+                    lowercase=True
+                )
+                logger.info(f"   📝 Adjusted vectorizer for small corpus ({doc_count} docs)")
+
+            # Generate or retrieve embeddings (with cache if enabled)
+            logger.info(f"🧠 Step 2/5: Generating semantic embeddings (converting text → {384 if self.language == 'multilingual' else 384}-dimensional vectors)...")
+            embeddings = None
+            if use_cache and article_ids and article_urls:
+                from ..config import settings
+                if settings.EMBEDDING_CACHE_ENABLED:
+                    from ..storage.embedding_cache import EmbeddingCacheManager
+                    from ..storage.database import Database
+
+                    # Filter article_ids and article_urls to match valid_indices
+                    valid_article_ids = [article_ids[i] for i in valid_indices]
+                    valid_article_urls = [article_urls[i] for i in valid_indices]
+
+                    db = Database()
+                    cache_manager = EmbeddingCacheManager(
+                        db, ttl_days=settings.EMBEDDING_CACHE_TTL_DAYS
+                    )
+
+                    # Get embeddings with cache
+                    embeddings = cache_manager.get_embeddings_with_cache(
+                        valid_docs,
+                        valid_article_ids,
+                        valid_article_urls,
+                        embedding_function=lambda docs: self.model.embedding_model.encode(docs)
+                    )
+
+                    logger.info("   💾 Using cached embeddings (faster processing)")
+
+            # Apply temporal weighting if enabled
+            if self.use_temporal_weighting and published_dates and embeddings is not None:
+                logger.info(f"⏰ Step 3/5: Applying temporal weighting (newer articles get more influence)...")
+                from .temporal_weighting import TemporalWeightCalculator
+
+                # Filter published_dates to match valid_indices
+                valid_dates = [published_dates[i] for i in valid_indices]
+
+                weighter = TemporalWeightCalculator(lambda_decay=self.temporal_lambda)
+                embeddings = weighter.apply_weights_to_embeddings(embeddings, valid_dates)
+
+                logger.info(f"   ✅ Applied temporal decay (half-life: {weighter.get_half_life_days():.1f} days)")
+
             # Fit model and predict topics
-            topics, _ = self.model.fit_transform(valid_docs)
+            logger.info(f"🔍 Step 4/5: Clustering articles (UMAP → HDBSCAN)...")
+            logger.info(f"   📉 UMAP: Reducing dimensions from 384D → 5D to find natural groupings")
+            logger.info(f"   🎯 HDBSCAN: Finding dense clusters (min cluster size: {self.min_topic_size} articles)")
+
+            if embeddings is not None:
+                topics, _ = self.model.fit_transform(valid_docs, embeddings=embeddings)
+            else:
+                topics, _ = self.model.fit_transform(valid_docs)
+
+            # Analyze clustering results
+            from collections import Counter
+            topic_counts = Counter(topics)
+            outlier_count = topic_counts.get(-1, 0)
+            valid_topics = {tid: count for tid, count in topic_counts.items() if tid != -1}
+
+            logger.info(f"📊 Step 5/5: Clustering results:")
+            logger.info(f"   ✅ Found {len(valid_topics)} distinct topics")
+
+            if valid_topics:
+                for topic_id in sorted(valid_topics.keys()):
+                    count = valid_topics[topic_id]
+                    logger.info(f"      • Topic {topic_id}: {count} articles")
+
+            if outlier_count > 0:
+                outlier_pct = (outlier_count / len(topics)) * 100
+                logger.info(f"   🔸 Outliers: {outlier_count} articles ({outlier_pct:.1f}%)")
+                logger.info(f"      → Why outliers? These articles are too diverse or unique.")
+                logger.info(f"      → They don't form dense clusters with at least {self.min_topic_size} similar articles.")
+                logger.info(f"      → Think of them as 'one-off stories' rather than recurring themes.")
 
             # Get topic information
             topic_info = self._get_topic_info()
@@ -199,12 +308,48 @@ class TopicModeler:
             for i, orig_idx in enumerate(valid_indices):
                 full_topics[orig_idx] = topics[i]
 
-            logger.info(f"Extracted {len(topic_info)} topics (excluding outliers)")
+            logger.info(f"✨ BERTopic clustering complete: {len(topic_info)} topics ready for analysis")
 
             return full_topics, topic_info
 
         except Exception as e:
-            logger.error(f"Error extracting topics: {e}")
+            error_str = str(e)
+            logger.error(f"❌ Error extracting topics: {e}")
+
+            # Check if error is due to vectorizer constraints
+            if "max_df corresponds to" in error_str or "min_df" in error_str:
+                logger.warning(f"⚠️  Vectorizer constraint error - retrying with relaxed settings...")
+                try:
+                    # Retry with minimal constraints
+                    self.model.vectorizer_model = CountVectorizer(
+                        ngram_range=(1, 1),
+                        stop_words=self.stopwords,
+                        min_df=1,
+                        max_df=1.0,
+                        lowercase=True
+                    )
+                    if embeddings is not None:
+                        topics, _ = self.model.fit_transform(valid_docs, embeddings=embeddings)
+                    else:
+                        topics, _ = self.model.fit_transform(valid_docs)
+
+                    topic_info = self._get_topic_info()
+                    full_topics = [-1] * len(documents)
+                    for i, orig_idx in enumerate(valid_indices):
+                        full_topics[orig_idx] = topics[i]
+
+                    logger.info(f"✨ Retry successful: {len(topic_info)} topics found")
+                    return full_topics, topic_info
+                except Exception as retry_error:
+                    logger.error(f"❌ Retry also failed: {retry_error}")
+
+            # Check if error is due to insufficient data
+            if "zero-size array" in error_str or "no identity" in error_str:
+                logger.warning(f"⚠️  Not enough articles to form clusters!")
+                logger.warning(f"   Current: {len(valid_docs)} articles")
+                logger.warning(f"   Required: minimum {self.min_topic_size} similar articles per cluster")
+                logger.warning(f"   💡 Solution: Wait for more articles to accumulate, or reduce TOPIC_MIN_TOPIC_SIZE")
+
             return [], {}
 
     def _get_topic_info(self) -> Dict[int, Dict]:
@@ -218,6 +363,8 @@ class TopicModeler:
             return {}
 
         topic_info = {}
+
+        logger.info("🏷️  Extracting topic keywords and metadata...")
 
         for topic_id in self.model.get_topics().keys():
             if topic_id == -1:  # Skip outlier topic
@@ -246,14 +393,18 @@ class TopicModeler:
             # Generate human-readable topic name
             topic_name = self._generate_topic_name(filtered_words[:5])
 
+            topic_size = self.model.get_topic_info()[
+                self.model.get_topic_info()['Topic'] == topic_id
+            ]['Count'].values[0] if len(self.model.get_topic_info()) > 0 else 0
+
+            logger.info(f"   📌 Topic {topic_id} ({topic_size} articles): {', '.join(filtered_words[:3])}...")
+
             topic_info[topic_id] = {
                 'id': topic_id,
                 'name': topic_name,
                 'top_words': filtered_words[:5],  # Use filtered words, not originals
                 'word_scores': word_scores,
-                'size': self.model.get_topic_info()[
-                    self.model.get_topic_info()['Topic'] == topic_id
-                ]['Count'].values[0] if len(self.model.get_topic_info()) > 0 else 0
+                'size': topic_size
             }
 
         return topic_info
@@ -318,7 +469,13 @@ class TopicModeler:
                 continue
 
             try:
-                date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                # Handle both string and datetime objects
+                if isinstance(date_str, datetime):
+                    date = date_str
+                elif isinstance(date_str, str):
+                    date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                else:
+                    continue
             except:
                 continue
 
@@ -370,9 +527,60 @@ class TopicModeler:
         """Save the trained model to disk."""
         if self.model:
             self.model.save(path)
-            logger.info(f"Model saved to {path}")
+            logger.info(f"💾 Model saved to {path}")
 
     def load_model(self, path: str):
         """Load a trained model from disk."""
         self.model = BERTopic.load(path)
-        logger.info(f"Model loaded from {path}")
+        logger.info(f"📂 Model loaded from {path}")
+
+    def compute_topic_centroid(
+        self,
+        topic_id: int,
+        article_ids: List[int],
+        db
+    ) -> Optional['np.ndarray']:
+        """
+        Compute the centroid (mean embedding) for a topic.
+
+        Args:
+            topic_id: Topic ID
+            article_ids: List of article IDs in this topic
+            db: Database instance
+
+        Returns:
+            Numpy array of centroid embedding or None
+        """
+        if not article_ids or not self.model:
+            return None
+
+        try:
+            # Get article contents
+            documents = []
+            with db.get_session() as session:
+                from ..storage.models import Article
+                for article_id in article_ids[:100]:  # Limit to 100 for performance
+                    article = session.query(Article).filter(Article.id == article_id).first()
+                    if article and article.cleaned_content:
+                        documents.append(article.cleaned_content)
+                    elif article and article.content:
+                        documents.append(self._preprocess_text(article.content))
+
+            if not documents:
+                return None
+
+            # Compute embeddings
+            # Note: BERTopic's embedding_model is a backend, use embed() method
+            embeddings = self.model.embedding_model.encode(documents)
+
+            # Calculate centroid (mean)
+            import numpy as np
+            centroid = np.mean(embeddings, axis=0)
+
+            logger.debug(f"Computed centroid for topic {topic_id} from {len(documents)} articles")
+
+            return centroid
+
+        except Exception as e:
+            logger.error(f"Error computing centroid for topic {topic_id}: {e}")
+            return None

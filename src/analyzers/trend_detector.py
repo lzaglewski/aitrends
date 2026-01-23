@@ -10,6 +10,7 @@ import json
 
 from ..storage.database import Database
 from ..config import settings
+from .lifecycle_analyzer import TrendLifecycleAnalyzer
 
 
 class TrendDetector:
@@ -27,7 +28,8 @@ class TrendDetector:
         self,
         window_days: int = 30,
         min_count: int = 3,
-        min_growth_rate: float = 0.2
+        min_growth_rate: float = 0.2,
+        use_weighted_counts: bool = None
     ) -> List[Dict]:
         """
         Calculate trends based on topic frequency changes.
@@ -42,11 +44,19 @@ class TrendDetector:
             window_days: Size of the analysis window in days
             min_count: Minimum occurrences in current period to be considered
             min_growth_rate: Minimum growth rate to be marked as trending (0.2 = 20%)
+            use_weighted_counts: Whether to use source credibility weighted counts (default: from settings)
 
         Returns:
             List of trend dictionaries with topic metadata
         """
-        logger.info(f"Calculating topic trends for {window_days}-day window")
+        # Use settings if not explicitly specified
+        if use_weighted_counts is None:
+            use_weighted_counts = settings.SOURCE_WEIGHTS_ENABLED
+
+        logger.info(
+            f"Calculating topic trends for {window_days}-day window "
+            f"(weighted: {use_weighted_counts})"
+        )
 
         now = datetime.utcnow()
         current_end = now
@@ -55,8 +65,12 @@ class TrendDetector:
         previous_start = current_start - timedelta(days=window_days)
 
         # Get topic counts for both periods
-        current_counts = self.db.get_topic_counts(current_start, current_end)
-        previous_counts = self.db.get_topic_counts(previous_start, previous_end)
+        if use_weighted_counts:
+            current_counts = self.db.get_weighted_topic_counts(current_start, current_end)
+            previous_counts = self.db.get_weighted_topic_counts(previous_start, previous_end)
+        else:
+            current_counts = self.db.get_topic_counts(current_start, current_end)
+            previous_counts = self.db.get_topic_counts(previous_start, previous_end)
 
         logger.debug(f"Current period topics: {len(current_counts)}")
         logger.debug(f"Previous period topics: {len(previous_counts)}")
@@ -123,6 +137,180 @@ class TrendDetector:
         logger.info(f"Found {new_count} new topics")
 
         return trends
+
+    def calculate_trends_multiperiod(
+        self,
+        period_weeks: int = 2,
+        num_periods: int = 4,
+        min_count: int = 3,
+        min_growth_rate: float = 0.2,
+        use_weighted_counts: bool = None
+    ) -> List[Dict]:
+        """
+        Calculate trends with multi-period lifecycle analysis.
+
+        Analyzes trends across multiple time periods to determine lifecycle stages,
+        velocity, and historical patterns.
+
+        Args:
+            period_weeks: Length of each period in weeks
+            num_periods: Number of periods to analyze
+            min_count: Minimum count in most recent period
+            min_growth_rate: Minimum growth rate for trending classification
+            use_weighted_counts: Whether to use source-weighted counts
+
+        Returns:
+            List of trend dictionaries with lifecycle information
+        """
+        # Use settings if not explicitly specified
+        if use_weighted_counts is None:
+            use_weighted_counts = settings.SOURCE_WEIGHTS_ENABLED
+
+        logger.info(
+            f"📈 Calculating multi-period trends: {num_periods} periods of {period_weeks} weeks "
+            f"(weighted: {use_weighted_counts})"
+        )
+
+        # Generate period boundaries
+        now = datetime.utcnow()
+        periods = []
+        for i in range(num_periods):
+            period_end = now - timedelta(weeks=period_weeks * i)
+            period_start = period_end - timedelta(weeks=period_weeks)
+            periods.append((period_start, period_end))
+
+        # Reverse to get chronological order
+        periods = list(reversed(periods))
+
+        # Get counts for the most recent period
+        current_start, current_end = periods[-1]
+        if use_weighted_counts:
+            current_counts = self.db.get_weighted_topic_counts(current_start, current_end)
+        else:
+            current_counts = self.db.get_topic_counts(current_start, current_end)
+
+        # Get all topics metadata
+        all_topics = self.db.get_all_topics()
+        topic_metadata = {t.topic_id: t for t in all_topics}
+
+        # Filter topics with sufficient activity
+        active_topic_ids = [
+            topic_id for topic_id, count in current_counts.items()
+            if count >= min_count
+        ]
+
+        if not active_topic_ids:
+            logger.warning("No topics meet minimum count threshold")
+            return []
+
+        # Perform lifecycle analysis
+        lifecycle_analyzer = TrendLifecycleAnalyzer(self.db)
+        lifecycle_analyses = lifecycle_analyzer.batch_analyze(
+            active_topic_ids,
+            periods,
+            use_weighted_counts
+        )
+
+        # Build trend dictionaries
+        trends = []
+        for topic_id, lifecycle in lifecycle_analyses.items():
+            # Get topic metadata
+            topic = topic_metadata.get(topic_id)
+            if topic:
+                topic_name = topic.topic_name
+                try:
+                    top_words = json.loads(topic.top_words)
+                except:
+                    top_words = []
+            else:
+                topic_name = f"Topic {topic_id}"
+                top_words = []
+
+            # Extract lifecycle metrics
+            current_count = lifecycle['current_count']
+            growth_rate = lifecycle['growth_rates'][-1] if lifecycle['growth_rates'] else 0.0
+            stage = lifecycle['stage']
+            velocity = lifecycle['velocity']
+
+            # Determine if trending
+            is_trending = growth_rate >= min_growth_rate and current_count >= min_count
+            is_new = lifecycle['counts'][0] == 0 if len(lifecycle['counts']) > 1 else False
+
+            # Weighted count for most recent period
+            weighted_count = current_counts.get(topic_id, current_count) if use_weighted_counts else None
+
+            # Build trend dict
+            trend = {
+                'topic_id': topic_id,
+                'keyword': topic_name,  # For backward compatibility
+                'topic_name': topic_name,
+                'top_words': top_words,
+                'count': int(current_count),
+                'weighted_count': weighted_count,
+                'growth_rate': growth_rate,
+                'is_trending': is_trending,
+                'is_new': is_new,
+                'stage': stage,
+                'velocity': velocity,
+                'historical_counts': lifecycle['counts'],
+                'growth_rates': lifecycle['growth_rates'],
+                'trend_direction': lifecycle['trend_direction'],
+                'average_growth': lifecycle['average_growth'],
+                'status': self._format_status(stage, is_new, is_trending),
+                'period_start': current_start,
+                'period_end': current_end
+            }
+
+            trends.append(trend)
+
+        # Sort by growth rate (descending)
+        trends.sort(key=lambda x: x['growth_rate'], reverse=True)
+
+        # Log summary
+        logger.info(f"✅ Analyzed {len(trends)} topics across {num_periods} periods")
+        stage_counts = {}
+        for trend in trends:
+            stage = trend['stage']
+            stage_counts[stage] = stage_counts.get(stage, 0) + 1
+
+        for stage, count in sorted(stage_counts.items()):
+            logger.info(f"  {stage}: {count} topics")
+
+        trending_count = sum(1 for t in trends if t['is_trending'])
+        logger.info(f"🔥 Marked {trending_count} as trending (growth >= {min_growth_rate:.0%})")
+
+        return trends
+
+    def _format_status(self, stage: str, is_new: bool, is_trending: bool) -> str:
+        """
+        Format status string with emoji and description.
+
+        Args:
+            stage: Lifecycle stage
+            is_new: Whether topic is new
+            is_trending: Whether topic is trending
+
+        Returns:
+            Formatted status string
+        """
+        stage_labels = {
+            'emerging': '🌱 Emerging',
+            'growing': '📈 Growing',
+            'peak': '⭐ Peak',
+            'declining': '📉 Declining',
+            'stable': '➡️ Stable',
+            'dormant': '💤 Dormant'
+        }
+
+        base_label = stage_labels.get(stage, f'❓ {stage.capitalize()}')
+
+        # Add modifiers
+        if is_new:
+            return f"🌟 New · {base_label}"
+        elif is_trending:
+            return f"🔥 Trending · {base_label}"
+        else:
+            return base_label
 
     def get_emerging_topics(
         self,

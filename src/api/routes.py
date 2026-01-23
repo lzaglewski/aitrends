@@ -73,6 +73,7 @@ class TrendResponse(BaseModel):
     count: int
     growth_rate: float
     is_trending: bool
+    topic_id: Optional[int] = None
 
 
 class KeywordResponse(BaseModel):
@@ -208,6 +209,7 @@ def get_top_keywords(
 @app.get("/articles")
 def get_articles(
     keyword: Optional[str] = Query(None, description="Filter by keyword"),
+    topic_id: Optional[int] = Query(None, description="Filter by topic ID"),
     source_id: Optional[int] = Query(None, description="Filter by source ID"),
     days: Optional[int] = Query(None, description="Filter by days back", ge=1),
     limit: int = Query(20, description="Number of articles to return", ge=1, le=100)
@@ -216,6 +218,21 @@ def get_articles(
     Search and filter articles.
     """
     try:
+        # If topic_id is provided, use specialized method
+        if topic_id is not None:
+            articles = db.get_articles_by_topic(topic_id=topic_id, limit=limit)
+            return [
+                {
+                    "id": article.id,
+                    "title": article.title,
+                    "url": article.url,
+                    "published_date": article.published_date,
+                    "word_count": article.word_count,
+                    "source_name": article.source.name
+                }
+                for article in articles
+            ]
+
         start_date = None
         end_date = None
 
@@ -414,6 +431,41 @@ def health_check():
         "status": "healthy",
         "timestamp": datetime.utcnow()
     }
+
+
+@app.get("/topics/visualization")
+def get_topic_visualization(
+    days: int = Query(60, description="Number of days to analyze", ge=7, le=180),
+    max_articles: int = Query(500, description="Maximum articles to visualize", ge=50, le=1000),
+    include_outliers: bool = Query(True, description="Include outlier articles (topic -1)")
+):
+    """
+    Get 2D visualization data for topic clusters.
+
+    Returns Plotly.js compatible data structure with:
+    - traces: Array of scatter plot traces (one per topic)
+    - layout: Plot configuration
+    - metadata: Statistics about the visualization
+
+    The visualization shows articles as points in 2D space,
+    where similar articles are clustered together.
+    Uses UMAP to reduce high-dimensional embeddings to 2D.
+    """
+    try:
+        from ..analyzers.topic_visualizer import TopicVisualizer
+
+        visualizer = TopicVisualizer(db)
+        data = visualizer.generate_visualization_data(
+            days=days,
+            max_articles=max_articles,
+            include_outliers=include_outliers
+        )
+
+        return data
+
+    except Exception as e:
+        logger.error(f"Error generating visualization: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Error handlers

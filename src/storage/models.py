@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Boolean, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Boolean, ForeignKey, Index, LargeBinary
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -13,6 +13,7 @@ class Source(Base):
     name = Column(String(255), nullable=False)
     url = Column(String(512), nullable=False, unique=True)
     source_type = Column(String(50), nullable=False)  # blog/rss/sitemap
+    credibility_weight = Column(Float, default=1.0, nullable=False)  # Source credibility weight
     last_scraped = Column(DateTime, nullable=True)
     active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -38,6 +39,9 @@ class Article(Base):
     author = Column(String(255), nullable=True)
     topic_id = Column(Integer, nullable=True, index=True)  # BERTopic topic ID (-1 = outlier)
     cleaned_content = Column(Text, nullable=True)  # Preprocessed content for topic modeling
+    summary = Column(Text, nullable=True)  # LLM-generated summary for clustering
+    is_trend_relevant = Column(Boolean, default=True)  # False = skip in clustering
+    summary_generated_at = Column(DateTime, nullable=True)
 
     source = relationship("Source", back_populates="articles")
     keywords = relationship("Keyword", back_populates="article", cascade="all, delete-orphan")
@@ -123,3 +127,59 @@ class FailedUrl(Base):
 
     def __repr__(self):
         return f"<FailedUrl(url='{self.url}', retries={self.retry_count})>"
+
+
+class EmbeddingCache(Base):
+    """
+    Cache for article embeddings to speed up topic modeling on reruns.
+
+    Embeddings are expensive to compute, so caching them based on content
+    can significantly speed up reprocessing of articles.
+    """
+    __tablename__ = "embedding_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cache_key = Column(String(64), unique=True, index=True, nullable=False)  # SHA256(url + content[:500])
+    embedding = Column(LargeBinary, nullable=False)  # Pickled numpy array
+    article_id = Column(Integer, ForeignKey("articles.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    last_accessed = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index('idx_cache_key', 'cache_key'),
+        Index('idx_created_at', 'created_at'),
+    )
+
+    def __repr__(self):
+        return f"<EmbeddingCache(cache_key='{self.cache_key[:16]}...', created={self.created_at})>"
+
+
+class TrendSnapshot(Base):
+    """
+    Historical snapshot of topic trends for tracking evolution over time.
+
+    Stores periodic snapshots of topic metrics and centroids to enable
+    trend lifecycle analysis and semantic drift detection.
+    """
+    __tablename__ = "trend_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    topic_id = Column(Integer, ForeignKey("topics.topic_id"), nullable=False, index=True)
+    snapshot_date = Column(DateTime, nullable=False, index=True)
+    period_start = Column(DateTime, nullable=False)
+    period_end = Column(DateTime, nullable=False)
+    article_count = Column(Integer, nullable=False)
+    weighted_count = Column(Float, nullable=True)  # Source-weighted count
+    growth_rate = Column(Float, nullable=False)
+    velocity = Column(Float, nullable=True)  # Rate of change of growth rate
+    stage = Column(String(50), nullable=True)  # emerging/growing/peak/declining/stable
+    centroid_embedding = Column(LargeBinary, nullable=True)  # Pickled numpy centroid
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index('idx_topic_snapshot_date', 'topic_id', 'snapshot_date'),
+        Index('idx_snapshot_date', 'snapshot_date'),
+    )
+
+    def __repr__(self):
+        return f"<TrendSnapshot(topic_id={self.topic_id}, stage='{self.stage}', date={self.snapshot_date})>"

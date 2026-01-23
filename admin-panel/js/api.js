@@ -68,6 +68,7 @@ class APIClient {
     async getArticles(params = {}) {
         const queryParams = new URLSearchParams();
         if (params.keyword) queryParams.append('keyword', params.keyword);
+        if (params.topic_id) queryParams.append('topic_id', params.topic_id);
         if (params.source_id) queryParams.append('source_id', params.source_id);
         if (params.days) queryParams.append('days', params.days);
         if (params.limit) queryParams.append('limit', params.limit);
