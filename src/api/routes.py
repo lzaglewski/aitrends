@@ -433,6 +433,41 @@ def health_check():
     }
 
 
+@app.get("/topics/visualization")
+def get_topic_visualization(
+    days: int = Query(60, description="Number of days to analyze", ge=7, le=180),
+    max_articles: int = Query(500, description="Maximum articles to visualize", ge=50, le=1000),
+    include_outliers: bool = Query(True, description="Include outlier articles (topic -1)")
+):
+    """
+    Get 2D visualization data for topic clusters.
+
+    Returns Plotly.js compatible data structure with:
+    - traces: Array of scatter plot traces (one per topic)
+    - layout: Plot configuration
+    - metadata: Statistics about the visualization
+
+    The visualization shows articles as points in 2D space,
+    where similar articles are clustered together.
+    Uses UMAP to reduce high-dimensional embeddings to 2D.
+    """
+    try:
+        from ..analyzers.topic_visualizer import TopicVisualizer
+
+        visualizer = TopicVisualizer(db)
+        data = visualizer.generate_visualization_data(
+            days=days,
+            max_articles=max_articles,
+            include_outliers=include_outliers
+        )
+
+        return data
+
+    except Exception as e:
+        logger.error(f"Error generating visualization: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Error handlers
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):

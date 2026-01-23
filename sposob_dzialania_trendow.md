@@ -806,6 +806,80 @@ Generated: 2025-12-09 15:30 UTC
 
 ---
 
+## 🗺️ BONUS: Wizualizacja przestrzeni tematów
+
+### Jak zobaczyć przestrzeń 5D?
+
+Problem: UMAP redukuje embeddingi do 5 wymiarów, ale człowiek widzi max 3D.
+Rozwiązanie: **Kolejny UMAP** redukuje 5D → 2D dla wizualizacji.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    PIPELINE WIZUALIZACJI                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Artykuły z bazy                                                            │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────────────────────────────────┐                               │
+│  │ SentenceTransformer                     │                               │
+│  │ Tekst → Embedding 384D                  │                               │
+│  └─────────────────────────────────────────┘                               │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────────────────────────────────┐                               │
+│  │ UMAP (wizualizacja)                     │                               │
+│  │ 384D → 2D (bezpośrednio!)               │                               │
+│  │                                         │                               │
+│  │ n_neighbors=15                          │                               │
+│  │ n_components=2  ← dla wykresu           │                               │
+│  │ min_dist=0.1    ← trochę rozrzutu       │                               │
+│  └─────────────────────────────────────────┘                               │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────────────────────────────────┐                               │
+│  │ Plotly.js                               │                               │
+│  │ Interaktywny wykres scatter             │                               │
+│  │ - Kolory = tematy                       │                               │
+│  │ - Hover = tytuł artykułu                │                               │
+│  │ - Click = otwórz artykuł                │                               │
+│  └─────────────────────────────────────────┘                               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Jak czytać wizualizację?
+
+```
+                    ┌─────────────────────────────────────┐
+                    │  🔴 Temat 1: AI Content            │
+                    │      ●●●                           │
+                    │     ●●●●●                          │
+                    │      ●●●              🟢 Temat 2   │
+                    │                       ●●●         │
+                    │                      ●●●●         │
+                    │         ○                         │
+                    │       ○   ○     🔵 Temat 3        │
+                    │            ○      ●●              │
+                    │                   ●●●             │
+                    │  ○ = outlierzy (szare)            │
+                    └─────────────────────────────────────┘
+
+Interpretacja:
+- Punkty blisko siebie = artykuły o podobnej treści
+- Punkty tego samego koloru = ten sam temat
+- Gęste skupiska = wyraźne tematy
+- Rozrzucone punkty = tematy niejednorodne
+- Szare outlierzy = artykuły unikalne, bez grupy
+```
+
+### Dostęp do wizualizacji
+
+- **Admin Panel**: http://localhost:8000/admin/visualization.html
+- **API Endpoint**: `GET /topics/visualization?days=60&max_articles=500`
+
+---
+
 ## 💡 Kluczowe wnioski
 
 1. **Embedding** → Rozumienie semantyki tekstu (znaczenia, nie słów)
@@ -813,5 +887,6 @@ Generated: 2025-12-09 15:30 UTC
 3. **LLM Validation** → Ludzka inteligencja sprawdza czy to trend
 4. **Time Comparison** → Trendy to wzrost, nie pojedyncze artykuły
 5. **Confidence Score** → Nie wszystkie trendy mają 100% pewności
+6. **Wizualizacja** → Możliwość "zobaczenia" przestrzeni semantycznej w 2D
 
 **Rezultat**: Rzeczywiste trendy branżowe zamiast szumu! 🎉
